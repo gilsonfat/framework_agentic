@@ -1,0 +1,28 @@
+version: 1
+
+providers:
+  project_planner:
+    engine: gsd
+    required: true
+
+  specification:
+    engine: tlc-spec-driven
+    required: true
+
+  execution:
+    engine: ruflo
+    required: false
+    fallback: native-agent
+
+  process:
+    engine: superpowers
+    required: true
+
+  verification:
+    engine: tlc-spec-driven
+    fresh_context: true
+    required: true
+
+  domain_skills:
+    engine: optional
+    auto_select: true

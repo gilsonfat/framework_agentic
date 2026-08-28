@@ -1,0 +1,12 @@
+run_id: RUN-TEST-REM
+verification_id: VER-FAIL-01
+requirement: REQ-017
+expected: "All criteria pass: [AC-017.1, AC-017.2]"
+observed: "Criteria failed: [AC-017.2]"
+evidence:
+  - Criteria AC-017.2 failed
+affected_tasks: []
+suspected_areas:
+  - Uniqueness constraint missing on competence column
+severity: CRITICAL
+attempt: 3

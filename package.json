@@ -1,0 +1,47 @@
+{
+  "name": "@agentic/sdlc-orchestrator",
+  "version": "1.0.0",
+  "description": "Agentic SDLC Orchestrator - Cyclic, auditable, and state-driven autonomous software delivery framework",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "agentic": "./bin/agentic.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "doctor": "node bin/agentic.js doctor",
+    "status": "node bin/agentic.js status",
+    "observe": "node bin/agentic.js observe",
+    "reconcile": "node bin/agentic.js reconcile",
+    "init:agentic": "node scripts/agentic-init.js"
+  },
+  "keywords": [
+    "agentic",
+    "sdlc",
+    "orchestrator",
+    "gsd",
+    "tlc",
+    "ruflo",
+    "superpowers",
+    "multi-agent",
+    "state-machine"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "commander": "^13.1.0",
+    "yaml": "^2.7.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.9",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.8"
+  }
+}

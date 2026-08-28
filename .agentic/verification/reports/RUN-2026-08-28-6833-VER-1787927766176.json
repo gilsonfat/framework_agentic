@@ -1,0 +1,20 @@
+{
+  "verification_id": "VER-1787927766176",
+  "run_id": "RUN-2026-08-28-6833",
+  "status": "PASS",
+  "timestamp": "2026-08-28T14:36:06.176Z",
+  "verifier_type": "fresh_context",
+  "requirements_checked": [
+    {
+      "requirement_id": "TASK-001",
+      "status": "verified",
+      "acceptance_criteria_passed": [],
+      "acceptance_criteria_failed": []
+    }
+  ],
+  "evidence": {
+    "tests_passed": 1,
+    "tests_failed": 0,
+    "test_suite_output": "All tests passed successfully."
+  }
+}

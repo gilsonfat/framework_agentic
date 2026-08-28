@@ -1,0 +1,33 @@
+version: 1
+
+levels:
+
+  XS:
+    files_estimate: 1-2
+    domains: 1
+    agent_strategy: single
+    swarm: false
+
+  S:
+    files_estimate: 3-5
+    domains: 1
+    agent_strategy: single
+    swarm: false
+
+  M:
+    files_estimate: 5-15
+    domains: 2-3
+    agent_strategy: parallel-small
+    swarm: optional
+
+  L:
+    files_estimate: 15-40
+    domains: 3-5
+    agent_strategy: swarm
+    swarm: true
+
+  XL:
+    files_estimate: 40+
+    domains: 5+
+    agent_strategy: decompose-work-packages
+    swarm: true

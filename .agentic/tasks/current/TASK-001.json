@@ -1,0 +1,29 @@
+{
+  "id": "TASK-001",
+  "title": "Execute work package for P01",
+  "role": "orchestrator-engineer",
+  "objective": "Implement Execute work package for P01",
+  "domain": "orchestrator",
+  "requirements": [],
+  "acceptance_criteria": [],
+  "dependencies": [],
+  "ownership": {
+    "write": [
+      "src/**"
+    ]
+  },
+  "process": {
+    "tdd": true,
+    "systematic_debugging": true,
+    "verification_before_completion": true
+  },
+  "output": {
+    "implementation_report": true,
+    "tests": true,
+    "commit": true
+  },
+  "completion": {
+    "tests_must_pass": true,
+    "no_self_declared_done": true
+  }
+}

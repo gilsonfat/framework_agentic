@@ -1,0 +1,15 @@
+run_id: RUN-2026-08-28-9659
+milestone: M01
+phase: P01
+goal: Initial Repository Bootstrap
+scope:
+  include: []
+  exclude: []
+requirements: []
+dependencies: []
+risks: []
+blockers: []
+complexity: S
+expected_domains:
+  - orchestrator
+human_gate_required: false

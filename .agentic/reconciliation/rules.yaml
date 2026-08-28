@@ -1,0 +1,7 @@
+version: 1
+
+rules:
+  precedence: observed_over_declared
+  tolerance: strict
+  require_executable_evidence: true
+  auto_repair_declared_state: true

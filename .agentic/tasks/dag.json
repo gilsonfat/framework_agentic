@@ -1,0 +1,49 @@
+{
+  "nodes": [
+    {
+      "id": "TASK-001",
+      "title": "Module A User Service",
+      "domain": "backend",
+      "requirements": [],
+      "acceptance_criteria": [],
+      "dependencies": [],
+      "ownership": {
+        "write": [
+          "src/services/**"
+        ]
+      }
+    },
+    {
+      "id": "TASK-002",
+      "title": "Module B User Service",
+      "domain": "backend",
+      "requirements": [],
+      "acceptance_criteria": [],
+      "dependencies": [],
+      "ownership": {
+        "write": [
+          "src/services/user.ts"
+        ]
+      }
+    }
+  ],
+  "edges": [],
+  "parallel_groups": [
+    [
+      "TASK-001",
+      "TASK-002"
+    ]
+  ],
+  "critical_path": [
+    "TASK-001"
+  ],
+  "conflicts": [
+    {
+      "task_a": "TASK-001",
+      "task_b": "TASK-002",
+      "conflicting_paths": [
+        "src/services/** <-> src/services/user.ts"
+      ]
+    }
+  ]
+}

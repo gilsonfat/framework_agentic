@@ -1,0 +1,87 @@
+version: 1
+
+states:
+
+  IDLE:
+    next:
+      - OBSERVING
+
+  OBSERVING:
+    success: RECONCILING
+    failure: BLOCKED
+
+  RECONCILING:
+    success: PLANNING
+    needs_state_repair: STATE_REPAIR
+    failure: BLOCKED
+
+  STATE_REPAIR:
+    success: PLANNING
+    failure: HUMAN_GATE
+
+  PLANNING:
+    success: SPECIFYING
+    no_work: COMPLETE
+    failure: BLOCKED
+
+  SPECIFYING:
+    success: SPEC_READY
+    needs_human: HUMAN_GATE
+    failure: BLOCKED
+
+  SPEC_READY:
+    next:
+      - COMPILING
+
+  COMPILING:
+    success: EXECUTION_READY
+    failure: BLOCKED
+
+  EXECUTION_READY:
+    next:
+      - EXECUTING
+
+  EXECUTING:
+    success: REVIEWING
+    partial_failure: REMEDIATING
+    failure: BLOCKED
+
+  REVIEWING:
+    success: VERIFYING
+    findings: REMEDIATING
+    critical: HUMAN_GATE
+
+  VERIFYING:
+    success: RECONCILING_IMPLEMENTATION
+    failure: REMEDIATING
+
+  REMEDIATING:
+    success: VERIFYING
+    repeated_failure: HUMAN_GATE
+    failure: BLOCKED
+
+  RECONCILING_IMPLEMENTATION:
+    success: AS_BUILT
+    failure: BLOCKED
+
+  AS_BUILT:
+    success: UPDATING_STATE
+    failure: BLOCKED
+
+  UPDATING_STATE:
+    success: OBSERVING
+    no_more_work: COMPLETE
+
+  HUMAN_GATE:
+    approved: previous_or_configured_state
+    rejected: STOPPED
+
+  BLOCKED:
+    resolved: OBSERVING
+    aborted: STOPPED
+
+  COMPLETE:
+    terminal: true
+
+  STOPPED:
+    terminal: true

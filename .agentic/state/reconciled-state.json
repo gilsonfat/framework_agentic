@@ -1,0 +1,19 @@
+{
+  "timestamp": "2026-08-28T14:55:25.962Z",
+  "status": "MATCH",
+  "matches": [
+    {
+      "id": "REQ-017",
+      "type": "requirement",
+      "declared": "done",
+      "observed": "done",
+      "result": "MATCH",
+      "evidence": [
+        "Implementation, test, and verification passed in observed matrix."
+      ]
+    }
+  ],
+  "partials": [],
+  "mismatches": [],
+  "unknowns": []
+}

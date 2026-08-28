@@ -1,0 +1,35 @@
+version: 1
+
+workflow:
+  name: agentic-sdlc-loop
+  mode: cyclic
+
+  stages:
+    - observe
+    - reconcile
+    - plan
+    - specify
+    - compile
+    - execute
+    - review
+    - verify
+    - reconcile_implementation
+    - as_built
+    - update_state
+    - loop
+
+  failure_transitions:
+    verify:
+      failure: remediate
+
+    review:
+      critical_failure: remediate
+
+    reconcile:
+      inconsistency: repair_state
+
+  terminal_conditions:
+    - no_pending_work
+    - human_stop
+    - unrecoverable_failure
+    - gate_requires_human

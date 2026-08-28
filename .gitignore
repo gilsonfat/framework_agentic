@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+.agentic/execution/runs/
+.agentic/state/history/
+.agentic/planning/history/
+.agentic/tasks/history/
+.agentic/verification/evidence/
+.agentic/reconciliation/reports/RUN-*
+*.log
+.DS_Store

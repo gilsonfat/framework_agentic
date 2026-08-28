@@ -1,0 +1,19 @@
+run_id: ""
+
+verification_id: ""
+
+requirement: ""
+
+expected: ""
+
+observed: ""
+
+evidence: []
+
+affected_tasks: []
+
+suspected_areas: []
+
+severity: "MAJOR"
+
+attempt: 1

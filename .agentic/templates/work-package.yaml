@@ -1,0 +1,24 @@
+run_id: ""
+
+milestone: ""
+phase: ""
+
+goal: ""
+
+scope:
+  include: []
+  exclude: []
+
+requirements: []
+
+dependencies: []
+
+risks: []
+
+blockers: []
+
+complexity: ""
+
+expected_domains: []
+
+human_gate_required: false

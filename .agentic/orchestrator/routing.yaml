@@ -1,0 +1,34 @@
+version: 1
+
+routing:
+
+  database:
+    preferred_agent: database-engineer
+    skills:
+      - database
+      - migrations
+
+  backend:
+    preferred_agent: backend-engineer
+    skills:
+      - api
+      - typescript
+
+  frontend:
+    preferred_agent: frontend-engineer
+    skills:
+      - frontend
+      - accessibility
+
+  testing:
+    preferred_agent: test-engineer
+    skills:
+      - testing
+
+  security:
+    preferred_agent: security-reviewer
+    mode: readonly
+
+  architecture:
+    preferred_agent: architect
+    human_gate_if_breaking: true

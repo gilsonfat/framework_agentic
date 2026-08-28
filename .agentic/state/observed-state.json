@@ -1,0 +1,63 @@
+{
+  "run_id": "RUN-TEST-OBS",
+  "git": {
+    "branch": "master",
+    "commit": "unknown",
+    "is_clean": true,
+    "dirty_files": [],
+    "recent_commits": []
+  },
+  "project": {
+    "name": "@agentic/sdlc-orchestrator",
+    "stack": [
+      "typescript",
+      "node"
+    ],
+    "scripts": {
+      "build": "tsc",
+      "test": "vitest run",
+      "test:watch": "vitest",
+      "doctor": "node bin/agentic.js doctor",
+      "status": "node bin/agentic.js status",
+      "observe": "node bin/agentic.js observe",
+      "reconcile": "node bin/agentic.js reconcile",
+      "init:agentic": "node scripts/agentic-init.js"
+    },
+    "migrations": []
+  },
+  "tests": {
+    "status": "pass",
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0,
+    "duration_ms": 0,
+    "failed_test_files": []
+  },
+  "requirements": {
+    "REQ-001": {
+      "status": "done",
+      "verified": true
+    },
+    "TASK-001": {
+      "status": "done",
+      "verified": true
+    }
+  },
+  "tasks": {
+    "TASK-001": {
+      "status": "pending"
+    },
+    "TASK-002": {
+      "status": "pending"
+    }
+  },
+  "specs": {
+    "planned": [],
+    "as_built": [
+      "P01"
+    ]
+  },
+  "risks": [],
+  "blockers": [],
+  "timestamp": "2026-08-28T14:55:25.959Z"
+}

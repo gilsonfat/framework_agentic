@@ -1,0 +1,130 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ObservedState",
+  "type": "object",
+  "required": [
+    "run_id",
+    "git",
+    "project",
+    "tests",
+    "requirements",
+    "tasks",
+    "specs",
+    "risks",
+    "blockers",
+    "timestamp"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "pattern": "^RUN-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9A-Za-z_-]+$"
+    },
+    "git": {
+      "type": "object",
+      "required": ["branch", "commit", "is_clean"],
+      "properties": {
+        "branch": { "type": "string" },
+        "commit": { "type": "string" },
+        "is_clean": { "type": "boolean" },
+        "dirty_files": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "recent_commits": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "project": {
+      "type": "object",
+      "required": ["name", "stack", "scripts"],
+      "properties": {
+        "name": { "type": "string" },
+        "stack": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "scripts": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "migrations": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "tests": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["pass", "fail", "unavailable", "pending"]
+        },
+        "passed": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "skipped": { "type": "integer", "minimum": 0 },
+        "duration_ms": { "type": "number" },
+        "failed_test_files": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "requirements": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["status"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["done", "partial", "not_started", "failed"]
+          },
+          "verified": { "type": "boolean" }
+        }
+      }
+    },
+    "tasks": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["status"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["pending", "in_progress", "completed", "failed", "blocked"]
+          },
+          "commit": { "type": "string" }
+        }
+      }
+    },
+    "specs": {
+      "type": "object",
+      "properties": {
+        "planned": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "as_built": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "risks": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "blockers": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

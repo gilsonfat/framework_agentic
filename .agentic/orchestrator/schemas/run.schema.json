@@ -1,0 +1,77 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RunDescriptor",
+  "type": "object",
+  "required": [
+    "run_id",
+    "status",
+    "started_at",
+    "baseline_commit",
+    "work_package"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "pattern": "^RUN-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9A-Za-z_-]+$"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "IDLE",
+        "OBSERVING",
+        "RECONCILING",
+        "STATE_REPAIR",
+        "PLANNING",
+        "SPECIFYING",
+        "SPEC_READY",
+        "COMPILING",
+        "EXECUTION_READY",
+        "EXECUTING",
+        "REVIEWING",
+        "VERIFYING",
+        "REMEDIATING",
+        "RECONCILING_IMPLEMENTATION",
+        "AS_BUILT",
+        "UPDATING_STATE",
+        "HUMAN_GATE",
+        "BLOCKED",
+        "COMPLETE",
+        "STOPPED"
+      ]
+    },
+    "started_at": { "type": "string", "format": "date-time" },
+    "finished_at": { "type": "string", "format": "date-time" },
+    "baseline_commit": { "type": "string" },
+    "result_commit": { "type": "string" },
+    "initial_observed_state": { "type": "object" },
+    "work_package": { "type": "object" },
+    "spec": { "type": "object" },
+    "tasks": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "dag": { "type": "object" },
+    "agents": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "worktrees": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "commits": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "tests": { "type": "object" },
+    "review": { "type": "object" },
+    "verification": { "type": "object" },
+    "remediations": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "reconciliation": { "type": "object" },
+    "as_built": { "type": "object" },
+    "resulting_state": { "type": "object" }
+  }
+}

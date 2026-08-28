@@ -1,0 +1,44 @@
+version: 1
+
+policies:
+
+  evidence_required_for_done: true
+
+  author_must_differ_from_verifier: true
+
+  spec_required:
+    feature: true
+    architecture_change: true
+    database_change: true
+    bugfix_small: false
+    documentation_only: false
+
+  tdd:
+    feature: required
+    bugfix: required
+    refactor: required
+    generated_code: optional
+    config_only: optional
+
+  worktree:
+    parallel_agents: required
+    single_agent: optional
+
+  git:
+    atomic_commit_per_task: true
+    force_push: forbidden
+    rewrite_shared_history: forbidden
+
+  security:
+    destructive_database_change: human_gate
+    authentication_change: human_gate
+    authorization_change: human_gate
+    secrets_change: human_gate
+
+  documentation:
+    generate_as_built: true
+    update_after_verified_only: true
+
+  loop:
+    maximum_automatic_remediation_attempts: 3
+    reobserve_after_success: true

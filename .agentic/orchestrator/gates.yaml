@@ -1,0 +1,39 @@
+version: 1
+
+human_gates:
+
+  new_milestone:
+    required: true
+
+  architecture_change:
+    required: true
+
+  destructive_database_change:
+    required: true
+
+  authentication_change:
+    required: true
+
+  authorization_change:
+    required: true
+
+  public_api_breaking_change:
+    required: true
+
+  dependency_major_upgrade:
+    required: true
+
+  normal_feature:
+    required: false
+
+  non_destructive_migration:
+    required: false
+
+  bugfix:
+    required: false
+
+  remediation:
+    required: false
+
+  repeated_remediation_failure:
+    required: true
