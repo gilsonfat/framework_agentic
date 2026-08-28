@@ -2,10 +2,19 @@
   "run_id": "RUN-TEST-OBS",
   "git": {
     "branch": "master",
-    "commit": "unknown",
-    "is_clean": true,
-    "dirty_files": [],
-    "recent_commits": []
+    "commit": "cdeb7f3b7dcab81e289b595a35457dfc16ee3144",
+    "is_clean": false,
+    "dirty_files": [
+      "M .agentic/audit/events.jsonl",
+      "M .agentic/specs/as-built/P01/RUN-TEST-AB.md",
+      "M .agentic/verification/requirement-matrix.json",
+      "M tests/setup-orchestrator.test.ts",
+      "?? .agentic/verification/reports/RUN-TEST-VER-1-VER-1787929092093.json",
+      "?? .agentic/verification/reports/RUN-TEST-VER-2-VER-1787929092101.json"
+    ],
+    "recent_commits": [
+      "cdeb7f3 feat:"
+    ]
   },
   "project": {
     "name": "@agentic/sdlc-orchestrator",
@@ -57,7 +66,9 @@
       "P01"
     ]
   },
-  "risks": [],
+  "risks": [
+    "Working tree is dirty with 6 uncommitted file(s)."
+  ],
   "blockers": [],
-  "timestamp": "2026-08-28T14:55:25.959Z"
+  "timestamp": "2026-08-28T14:58:12.689Z"
 }

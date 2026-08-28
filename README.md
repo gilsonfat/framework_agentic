@@ -39,18 +39,33 @@ Abra o terminal em **qualquer projeto novo ou existente** (ex: `meu-app`):
 ```bash
 cd /caminho/para/meu-app
 
-# Executar o setup automatizado completo:
+# 1. Executar o setup completo (Padrão com Superpowers):
 agentic setup
+
+# 2. Ou usar o ECC (Everything Claude Code) como Process Engine:
+agentic setup --with-ecc
+
+# 3. Ou escolher componentes específicos (modular):
+agentic setup --process ecc --without-gsd --without-ruflo
 ```
 
-> **Dica**: Se quiser que o setup tente instalar automaticamente os provedores de engine adicionais (GSD, TLC, Ruflo, Superpowers), use:
-> ```bash
-> agentic setup --all
-> ```
+#### Opções de Customização do `agentic setup`:
+| Flag | Descrição |
+| :--- | :--- |
+| `--with-ecc` | Usa o **ECC** (Enterprise Coding Capabilities) no lugar do Superpowers |
+| `--process <engine>` | Escolhe o motor de processo (`superpowers`, `ecc` ou `native`) |
+| `--without-gsd` | Desativa o GSD e usa o planejador nativo |
+| `--without-tlc` | Desativa o TLC e usa o especificador/verificador nativo |
+| `--without-ruflo` | Desativa o Ruflo e usa o executor nativo |
+| `--without-rules` | Não gera os arquivos `AGENTS.md`, `GEMINI.md`, `CLAUDE.md`, `CODEX.md` |
+| `--without-commands` | Não gera os comandos slash do Claude Code / Antigravity |
+| `--all` | Tenta instalar automaticamente os engines externos via terminal |
+| `-f, --force` | Sobrescreve arquivos de configuração existentes |
 
 #### O que o `agentic setup` faz automaticamente:
 - ✅ Inicializa o repositório Git (se ainda não existir).
 - ✅ Faz o scaffold da arquitetura completa `.agentic/` (schemas JSON, templates, configs YAML, políticas de segurança).
+- ✅ Configura o motor de processo escolhido (**Superpowers** ou **ECC**).
 - ✅ Configura as regras para IA no workspace (`AGENTS.md`, `GEMINI.md`, `CLAUDE.md`, `CODEX.md`).
 - ✅ Instala a Skill para o **Antigravity** (`.agents/skills/agentic/SKILL.md`).
 - ✅ Instala os Slash Commands para o **Claude Code** (`.claude/commands/`).
