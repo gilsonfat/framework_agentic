@@ -223,6 +223,10 @@ agentic team init                   # (re)declara o split compartilhado/local
 | `agentic ids [--kind REQ]` | Identificadores alocados |
 | `agentic resume [--apply]` | Plano de retomada e retomada efetiva |
 | `agentic providers` | Detecção real dos engines externos |
+| `agentic migrate [--apply]` | Traz os artefatos de `.agentic/` para o schema atual |
+| `agentic prompt "<x>" --split "<a>" --split "<b>" [--parallel]` | Decompõe um épico em fatias (REQ + contrato + tarefa por fatia) |
+| `agentic worktree list \| clean` | Checkouts isolados das ondas paralelas |
+| `agentic report ... --force` | Registra o report apesar de violar política (fica auditado) |
 
 ---
 
@@ -317,6 +321,84 @@ execution:
 
 ---
 
+## Políticas aplicadas (não só declaradas)
+
+`policies.yaml` sempre descreveu a governança; agora o código a executa. Toda requisição é **classificada** (`feature`, `bugfix`, `bugfix_small`, `refactor`, `database_change`, `architecture_change`, `documentation_only`, `config_only`, `generated_code`) e a classificação fica gravada no work package — é a chave que faltava para as regras por tipo de mudança.
+
+| Política | Onde é imposta | O que acontece |
+| :--- | :--- | :--- |
+| `spec_required.<tipo>` | antes do despacho | run vai a `BLOCKED` se o tipo exige contrato e não há nenhum |
+| `tdd.<tipo>` | em `agentic report` | `--status completed` sem `--tests` é **recusado** quando TDD é `required` |
+| `git.atomic_commit_per_task` | em `agentic report` | recusa report sem `--commit`, e verifica que o sha **resolve** no git |
+| `worktree.parallel_agents` | no despacho | cria worktree isolada por tarefa quando a onda tem mais de uma |
+| `loop.reobserve_after_success` | no fechamento | reobserva o repositório só quando a política pede |
+| `documentation.generate_as_built` | no fechamento | as-built só é gerado se a política mandar |
+
+```
+x Report rejected by 1 policy rule(s):
+    - [policies.tdd.feature] This work is classified 'feature' (adds new behaviour),
+      for which TDD is required, but the report lists no test file.
+      Report the tests you wrote: agentic report TASK-001 --status completed --tests "<test files>"
+  Fix the report, or record it as a deliberate exception with --force.
+```
+
+`--force` registra a exceção no resultado da tarefa **e** no stream de auditoria (`POLICY_OVERRIDDEN`) — a saída de emergência existe, mas fica rastreável.
+
+---
+
+## Decomposição, ondas e worktrees
+
+Até aqui todo pedido virava um requisito, uma tarefa, uma onda — o DAG, os grupos paralelos e a detecção de conflito de escrita existiam sem nunca serem exercitados. Agora você decompõe explicitamente:
+
+```bash
+agentic prompt "Entregar checkout completo"   --split "criar endpoint de pedido no modulo api"   --split "criar tela de checkout no modulo web"   --parallel
+```
+
+Cada fatia recebe **REQ próprio, contrato Spec Kit próprio e tarefa própria**, com escopo detectado por módulo. O framework não inventa a decomposição — decompor um épico é decisão de projeto; o que ele faz é compilar a que você declarou.
+
+Três regras governam as ondas:
+
+1. **Sequencial por padrão.** Sem `--parallel`, cada fatia depende da anterior.
+2. **Paralelo só quando é seguro.** Com `--parallel`, fatias independentes compartilham a onda — mas o compilador **serializa automaticamente** qualquer par cujos caminhos de escrita se sobreponham. Declarar paralelismo não autoriza corrida.
+3. **Isolamento real.** Quando uma onda tem mais de uma tarefa e `worktree.parallel_agents: required`, cada tarefa ganha uma worktree git própria (`.agentic/worktrees/<TASK>`, branch `agentic/<run>/<task>`), e o pacote de prompt manda trabalhar lá dentro.
+
+```bash
+agentic worktree list     # o que existe
+agentic worktree clean    # remove as checkouts (branches são preservados)
+agentic prompt "..." --no-worktrees   # desliga o isolamento
+```
+
+As branches nunca são apagadas na limpeza: podem conter trabalho não mesclado, e apagar commit de alguém para "arrumar a casa" seria o oposto do que o framework promete.
+
+---
+
+## Versionamento dos artefatos
+
+Todo artefato escrito em `.agentic/` carrega `schema_version`. Isso existe porque o framework relê o próprio estado a cada run: sem o carimbo, um artefato escrito por uma versão antiga é indistinguível de um atual e passa a ser lido com as suposições erradas.
+
+| Versão | O que mudou |
+| :--- | :--- |
+| v1 | implícita. Runs podiam chegar a `COMPLETE` sem registro de evidência, e o observer reportava `tests.status: pass` sem executar nada. |
+| **v2** | atual. Fechamento exige evidência executada; status de teste não medido é `pending`; o run carrega `dispatch` e `evidence`. |
+
+```bash
+agentic migrate            # dry run: mostra o que será feito
+agentic migrate --apply    # aplica
+```
+
+A migração é **conservadora ao preservar e estrita ao afirmar**: nada é apagado, mas toda alegação que o pipeline antigo conseguia produzir sem prova é rebaixada para o que as regras atuais conseguem justificar.
+
+| Achado | O que a migração faz |
+| :--- | :--- |
+| run `COMPLETE` sem evidência | aposenta o run (`STOPPED`) e registra o motivo |
+| `tests.status: pass` sem `evidence_id` | vira `pending` (não medido) + risco declarado |
+| requisito `verified` sem `evidence` | rebaixa para `tested: false, verified: false` com nota |
+| artefato de build mais novo | **recusa migrar** e manda atualizar a CLI |
+
+Enquanto houver artefato desalinhado, `agentic status` mostra `LEGACY (older schema)` em vez de repetir um status que não pode provar, e o `doctor` falha em **Artifact schema**. Os artefatos também são validados contra os JSON Schemas que o framework já publicava (`Artifact validation`) — antes eles existiam e nunca eram usados.
+
+---
+
 ## Configuração de evidência
 
 `.agentic/orchestrator/evidence.yaml` define como a evidência é produzida:
@@ -335,7 +417,9 @@ evidence:
 ## Desenvolvimento
 
 ```bash
-npm test          # 119 testes
+npm test              # 183 testes
 npm run build
-npm run doctor
+npm run verify:self   # doctor + integridade da auditoria
 ```
+
+CI (`.github/workflows/ci.yml`) roda em Node 20 e 22: type check, build e suíte; depois o framework se autoverifica (`migrate`, `audit verify`, `doctor`) e faz um smoke de `init` + fluxo de duas fases num projeto descartável, exigindo que o requisito feche **com evidência**.

@@ -23,6 +23,9 @@ export interface TaskResult {
 export interface DispatchedTask {
   task_id: string;
   wave: number;
+  /** Isolated checkout for this task, when the wave runs in parallel. */
+  worktree?: string;
+  branch?: string;
   contract_file: string;
   prompt_file: string;
   domain: string;
@@ -55,4 +58,8 @@ export interface PromptPackInput {
   assumptions?: string[];
   /** Pre-rendered "Skills To Use" markdown from the SkillRegistry. */
   skillGuidance?: string;
+  /** Isolated checkout the agent must work in, when one was created. */
+  worktree?: { directory: string; branch: string };
+  /** Policy obligations this task must satisfy to be reportable. */
+  policy?: { changeKind: string; tdd: 'required' | 'optional'; atomicCommit: boolean };
 }

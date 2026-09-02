@@ -3,6 +3,7 @@ import path from 'path';
 import { ObservedState, DeclaredState, ReconciledState, ReconciledItem } from '../types/state.js';
 import { AuditLogger } from './audit-logger.js';
 import { stampVersion } from './artifact-schema.js';
+import { ModuleDetector } from './module-detector.js';
 
 export class Reconciler {
   private projectRoot: string;
@@ -219,6 +220,16 @@ export class Reconciler {
         pending: pendingRequirements,
       },
     });
+
+    // Sync any unrecorded module changes into .planning/modules/<mod>/CHANGELOG.md
+    try {
+      new ModuleDetector(this.projectRoot).recordModuleChanges({
+        message: `Sincronização de estado observado (${next.phase || 'ciclo'})`,
+        phase: next.phase,
+      });
+    } catch {
+      // ignore
+    }
 
     return next;
   }

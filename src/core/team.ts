@@ -227,6 +227,8 @@ export class TeamCoordinator {
       'reconciliation/reports/',
       'team/leases/',
       'tasks/current/',
+      'worktrees/',
+      'execution/worktrees/',
       '',
       '# Shared team truth is committed: orchestrator/, specs/, planning/, gates/,',
       '# registry/, prompts/, templates/, audit/, verification/requirement-matrix.json',

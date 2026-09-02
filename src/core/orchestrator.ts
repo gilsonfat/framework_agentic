@@ -20,6 +20,8 @@ import { AgentBridge } from './agent-bridge.js';
 import { TeamCoordinator } from './team.js';
 import { IdRegistry } from './id-registry.js';
 import { ARTIFACT_SCHEMA_VERSION, isCurrent, stampVersion } from './artifact-schema.js';
+import { PolicyEngine } from './policy-engine.js';
+import { WorktreeManager } from './worktree-manager.js';
 import { RunDescriptor } from '../types/run.js';
 import { WorkPackage, TaskContract, TaskDAGNode } from '../types/task.js';
 import { BmadBriefing } from '../types/bmad.js';
@@ -27,6 +29,7 @@ import { GrillMeResult, DecisionRecord } from '../types/decision.js';
 import { GitHubSpecKitDocument } from '../types/spec-kit.js';
 import { ExecutionMode } from '../types/execution.js';
 import { EvidenceRecord } from '../types/evidence.js';
+import { ChangeClassification } from '../types/policy.js';
 
 export interface OrchestrationOptions {
   phaseId?: string;
@@ -47,6 +50,8 @@ export interface OrchestrationOptions {
   force?: boolean;
   /** Resume an existing run parked in AWAITING_AGENT instead of starting a new one. */
   resume?: boolean;
+  /** Skip git worktree isolation even when the policy asks for it. */
+  noWorktrees?: boolean;
 }
 
 /**
@@ -102,6 +107,8 @@ export class Orchestrator {
   private agentBridge: AgentBridge;
   private team: TeamCoordinator;
   private idRegistry: IdRegistry;
+  private policyEngine: PolicyEngine;
+  private worktrees: WorktreeManager;
 
   constructor(projectRoot: string = process.cwd()) {
     this.projectRoot = path.resolve(projectRoot);
@@ -123,6 +130,8 @@ export class Orchestrator {
     this.agentBridge = new AgentBridge(this.projectRoot, this.configLoader, this.auditLogger);
     this.team = new TeamCoordinator(this.projectRoot, this.auditLogger);
     this.idRegistry = new IdRegistry(this.projectRoot, this.auditLogger);
+    this.policyEngine = new PolicyEngine(this.projectRoot, this.configLoader);
+    this.worktrees = new WorktreeManager(this.projectRoot, this.auditLogger);
   }
 
   public generateRunId(): string {
@@ -217,6 +226,38 @@ export class Orchestrator {
     const taskNodes = this.deriveTaskNodes(workPackage, options.specKitDoc);
     const plannedWrites = taskNodes.flatMap((n) => n.ownership.write);
 
+    // The per-kind policies need a classification to key on.
+    const classification: ChangeClassification = this.policyEngine.classify(
+      `${workPackage.goal} ${workPackage.expected_domains.join(' ')}`,
+      { domain: workPackage.expected_domains[0], complexity: workPackage.complexity }
+    );
+    if (!workPackage.change_kind) {
+      workPackage.change_kind = classification.kind;
+    }
+
+    const specViolations = this.policyEngine.checkSpecRequirement(classification, {
+      hasSpec: Boolean(options.specKitDoc || options.specFile) || this.hasPlannedSpec(workPackage),
+    });
+
+    if (specViolations.length > 0) {
+      for (const violation of specViolations) {
+        this.auditLogger.emit(runId, 'POLICY_VIOLATION', {
+          metadata: { code: violation.code, policy: violation.policy, message: violation.message },
+        });
+      }
+      sm.transition('failure');
+      const blocked = this.buildDescriptor({
+        runId,
+        status: sm.getState(),
+        observedBefore,
+        workPackage,
+        options,
+        blockers: specViolations.map((v) => `${v.policy}: ${v.message} -> ${v.remedy}`),
+      });
+      this.saveCurrentRun(blocked);
+      return blocked;
+    }
+
     const gateEvaluation = this.gateKeeper.evaluate({
       runId,
       workPackage,
@@ -250,15 +291,19 @@ export class Orchestrator {
     sm.transition('next');
 
     // ---- 5. COMPILE DAG ---------------------------------------------------
-    const dag = this.taskCompiler.compile(taskNodes);
+    // Tasks are compiled as declared, then any pair that would write the same
+    // paths in the same wave is serialized. This is what turns the DAG from a
+    // formality into real waves: independent slices run together, colliding
+    // ones are ordered instead of racing.
+    let dag = this.taskCompiler.compile(taskNodes);
     if (dag.conflicts.length > 0) {
       this.auditLogger.emit(runId, 'REVIEW_FINDING', {
-        metadata: {
-          layer: 'L0',
-          category: 'write-conflict',
-          conflicts: dag.conflicts,
-        },
+        metadata: { layer: 'L0', category: 'write-conflict', conflicts: dag.conflicts },
       });
+      const serialized = this.serializeConflicts(taskNodes, dag.conflicts);
+      if (serialized) {
+        dag = this.taskCompiler.compile(serialized);
+      }
     }
     sm.transition('success');
 
@@ -276,6 +321,27 @@ export class Orchestrator {
     sm.transition('next');
     const contracts: TaskContract[] = dag.nodes.map((node) => this.executor.createTaskContract(node));
     this.agentBridge.resetInbox();
+
+    // policies.worktree.parallel_agents: isolate tasks that share a wave.
+    const worktreePlan = this.worktrees.plan(dag);
+    let worktreeMap: Record<string, { directory: string; branch: string }> | undefined;
+    if (
+      !options.noWorktrees &&
+      worktreePlan.parallelTasks.length > 0 &&
+      this.policyEngine.requiresWorktreeForParallelAgents()
+    ) {
+      const { worktrees, skipped } = this.worktrees.ensure(runId, worktreePlan.parallelTasks);
+      worktreeMap = Object.fromEntries(
+        worktrees.map((w) => [w.task_id, { directory: w.directory, branch: w.branch }])
+      );
+      for (const skip of skipped) {
+        this.auditLogger.emit(runId, 'REVIEW_FINDING', {
+          task: skip.task,
+          metadata: { layer: 'L0', category: 'worktree', description: `isolation unavailable: ${skip.reason}` },
+        });
+      }
+    }
+
     const dispatch = this.agentBridge.dispatch({
       runId,
       dag,
@@ -288,6 +354,12 @@ export class Orchestrator {
         .filter((p) => p.assumed)
         .map((p) => `${p.question} -> ${p.resolved_answer}`),
       mode: options.executionMode,
+      worktrees: worktreeMap,
+      policy: {
+        changeKind: classification.kind,
+        tdd: classification.tdd,
+        atomicCommit: this.policyEngine.requiresAtomicCommitPerTask(),
+      },
     });
 
     if (dispatch.awaiting.length > 0) {
@@ -482,7 +554,8 @@ export class Orchestrator {
     // ---- 10. RECONCILE IMPLEMENTATION + AS-BUILT --------------------------
     sm.transition('success');
     sm.transition('success');
-    const asBuiltPath = this.asBuiltGenerator.generate({
+    const asBuiltPath = this.policyEngine.shouldGenerateAsBuilt()
+      ? this.asBuiltGenerator.generate({
       runId,
       milestone: run.work_package.milestone,
       phase: run.work_package.phase,
@@ -491,12 +564,16 @@ export class Orchestrator {
       verificationReport: verification,
       workPackage: run.work_package,
       filesChanged,
-      testsSummary: `${evidence.passed} passed / ${evidence.failed} failed via \`${evidence.command}\` (evidence ${evidence.id}).`,
-    });
+          testsSummary: `${evidence.passed} passed / ${evidence.failed} failed via \`${evidence.command}\` (evidence ${evidence.id}).`,
+        })
+      : '';
 
     // ---- 11-12. UPDATE STATE ---------------------------------------------
     sm.transition('success');
-    const observedAfter = this.observer.observe(runId, { runTests: false });
+    // policies.loop.reobserve_after_success
+    const observedAfter = this.policyEngine.shouldReobserveAfterSuccess()
+      ? this.observer.observe(runId, { runTests: false })
+      : run.initial_observed_state!;
     this.reconciler.syncDeclaredState(runId, observedAfter, {
       milestone: run.work_package.milestone,
       phase: run.work_package.phase,
@@ -518,7 +595,7 @@ export class Orchestrator {
       review: reviewReport as unknown as Record<string, unknown>,
       verification,
       evidence,
-      as_built: { file: path.relative(this.projectRoot, asBuiltPath) },
+      as_built: asBuiltPath ? { file: path.relative(this.projectRoot, asBuiltPath) } : undefined,
       commits: Array.from(new Set(results.map((r) => r.commit).filter(Boolean) as string[])),
       resulting_state: observedAfter,
       blockers: undefined,
@@ -529,6 +606,52 @@ export class Orchestrator {
       metadata: { verification: verification.verification_id, evidence: evidence.id },
     });
     return completed;
+  }
+
+  /** True when a planned spec already exists for this package's requirements. */
+  private hasPlannedSpec(workPackage: WorkPackage): boolean {
+    const plannedDir = path.join(this.projectRoot, '.agentic', 'specs', 'planned');
+    if (!fs.existsSync(plannedDir)) return false;
+
+    const numbers = workPackage.requirements.map((req) => req.replace(/^REQ-/, ''));
+    if (numbers.length === 0) return false;
+
+    try {
+      const files = fs.readdirSync(plannedDir);
+      return numbers.some((number) => files.some((file) => file.includes(number)));
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Adds dependencies so that tasks with overlapping write paths cannot land in
+   * the same wave. Returns undefined when nothing needed changing.
+   */
+  private serializeConflicts(
+    nodes: TaskDAGNode[],
+    conflicts: Array<{ task_a: string; task_b: string }>
+  ): TaskDAGNode[] | undefined {
+    if (conflicts.length === 0) return undefined;
+
+    const byId = new Map(nodes.map((node) => [node.id, { ...node, dependencies: [...node.dependencies] }]));
+    let changed = false;
+
+    for (const conflict of conflicts) {
+      // Keep the declared order: the later task waits for the earlier one.
+      const [first, second] =
+        nodes.findIndex((n) => n.id === conflict.task_a) <= nodes.findIndex((n) => n.id === conflict.task_b)
+          ? [conflict.task_a, conflict.task_b]
+          : [conflict.task_b, conflict.task_a];
+
+      const target = byId.get(second);
+      if (target && !target.dependencies.includes(first)) {
+        target.dependencies.push(first);
+        changed = true;
+      }
+    }
+
+    return changed ? nodes.map((node) => byId.get(node.id) || node) : undefined;
   }
 
   private deriveTaskNodes(workPackage: WorkPackage, spec?: GitHubSpecKitDocument): TaskDAGNode[] {
@@ -543,6 +666,40 @@ export class Orchestrator {
     const excluded = toGlobs(workPackage.scope?.exclude);
 
     const specRequirements = spec?.requirements || [];
+
+    // A decomposed package compiles one task per slice, each with its own
+    // ownership and declared dependencies, so independent slices can share a wave.
+    if (workPackage.slices && workPackage.slices.length > 0) {
+      const taskIdOf = new Map<string, string>();
+      workPackage.slices.forEach((slice, index) => {
+        taskIdOf.set(slice.requirement, `TASK-${String(index + 1).padStart(3, '0')}`);
+      });
+
+      return workPackage.slices.map((slice, index) => {
+        const sliceWrites = toGlobs(slice.scope);
+        const number = slice.requirement.replace(/^REQ-/, '');
+        const specReq = specRequirements.find((r) => r.id === slice.requirement);
+
+        return {
+          id: taskIdOf.get(slice.requirement) || `TASK-${String(index + 1).padStart(3, '0')}`,
+          title: slice.title,
+          domain: slice.domain || domain,
+          requirements: [slice.requirement],
+          acceptance_criteria: specReq
+            ? specReq.acceptance_criteria.map((ac) => ac.id)
+            : [`AC-${number}.1`],
+          dependencies: (slice.depends_on || [])
+            .map((req) => taskIdOf.get(req))
+            .filter((id): id is string => Boolean(id)),
+          ownership: {
+            write: sliceWrites.length > 0 ? sliceWrites : writePaths,
+            readonly: ['.agentic/specs/**', 'package.json'],
+            forbidden: [...GLOBAL_FORBIDDEN_PATHS, ...excluded],
+          },
+        };
+      });
+    }
+
     const requirementIds =
       workPackage.requirements.length > 0
         ? workPackage.requirements

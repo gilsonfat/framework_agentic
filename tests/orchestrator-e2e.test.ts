@@ -40,6 +40,17 @@ describe('Orchestrator delivery cycle', () => {
       YAML.stringify(workPackage),
       'utf8'
     );
+
+    // policies.spec_required: a feature cannot be dispatched without a contract.
+    for (const requirement of (workPackage.requirements as string[]) || []) {
+      const number = requirement.replace(/^REQ-/, '');
+      fs.writeFileSync(
+        path.join(tempDir, '.agentic', 'specs', 'planned', `SPEC-${number}.md`),
+        `# Contract for ${requirement}
+`,
+        'utf8'
+      );
+    }
   };
 
   const configureEvidence = (command: string) => {
@@ -163,6 +174,34 @@ describe('Orchestrator delivery cycle', () => {
 
     // No prompt pack is dispatched while the gate is pending.
     expect(fs.existsSync(path.join(tempDir, '.agentic', 'execution', 'inbox', 'TASK-001.md'))).toBe(false);
+  });
+
+  it('derives task ownership from the work package scope', async () => {
+    // A monorepo work package scoped to one app must not hand the agent the
+    // whole tree: the scope is the ownership boundary.
+    writeWorkPackage({
+      scope: {
+        include: ['apps/api/**', 'Core feature implementation matching the intent: listar produtos'],
+        exclude: ['apps/web/**'],
+      },
+    });
+
+    const result = await new Orchestrator(tempDir).runCycle({ phaseId: 'P-001' });
+    const task = result.dag?.nodes[0];
+
+    expect(task?.ownership.write).toEqual(['apps/api/**']);
+    expect(task?.ownership.forbidden).toContain('apps/web/**');
+
+    const pack = fs.readFileSync(path.join(tempDir, '.agentic', 'execution', 'inbox', 'TASK-001.md'), 'utf8');
+    expect(pack).toContain('apps/api/**');
+    expect(pack).not.toContain('WRITE (only these): `src/**`');
+  });
+
+  it('falls back to src/tests when the scope carries no path patterns', async () => {
+    writeWorkPackage({ scope: { include: ['Automated unit and contract test coverage (TDD)'], exclude: [] } });
+
+    const result = await new Orchestrator(tempDir).runCycle({ phaseId: 'P-001' });
+    expect(result.dag?.nodes[0].ownership.write).toEqual(['src/**', 'tests/**']);
   });
 
   it('refuses to run a phase claimed by a teammate, and honours --force', async () => {

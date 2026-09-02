@@ -15,6 +15,7 @@ import { AuditLogger } from './audit-logger.js';
 import { RoutingEngine } from './routing-engine.js';
 import { EvidenceCollector } from './evidence-collector.js';
 import { SkillRegistry } from './skill-registry.js';
+import { ModuleDetector } from './module-detector.js';
 
 export interface DispatchInput {
   runId: string;
@@ -27,6 +28,10 @@ export interface DispatchInput {
   assumptions?: string[];
   /** Overrides providers.yaml execution.mode. */
   mode?: ExecutionMode;
+  /** Isolated checkouts per task, when the wave runs in parallel. */
+  worktrees?: Record<string, { directory: string; branch: string }>;
+  /** Policy obligations every task in this run must satisfy. */
+  policy?: { changeKind: string; tdd: 'required' | 'optional'; atomicCommit: boolean };
 }
 
 /**
@@ -94,6 +99,7 @@ export class AgentBridge {
         .filter((section) => section.length > 0)
         .join('\n\n');
 
+      const worktree = input.worktrees?.[contract.id];
       const contractFile = this.writeContract(contract);
       const promptFile = this.writePromptPack({
         runId: input.runId,
@@ -109,11 +115,15 @@ export class AgentBridge {
         openQuestions: input.openQuestions,
         assumptions: input.assumptions,
         skillGuidance,
+        worktree,
+        policy: input.policy,
       });
 
       dispatched.push({
         task_id: contract.id,
         wave,
+        worktree: worktree ? path.relative(this.projectRoot, worktree.directory) : undefined,
+        branch: worktree?.branch,
         contract_file: path.relative(this.projectRoot, contractFile),
         prompt_file: path.relative(this.projectRoot, promptFile),
         domain: contract.domain,
@@ -200,6 +210,20 @@ export class AgentBridge {
         error: input.error,
       },
     });
+
+    // Record immediately into the corresponding module CHANGELOG.md
+    try {
+      new ModuleDetector(this.projectRoot).recordModuleChanges({
+        message: input.notes?.join('; ') || `Tarefa ${input.taskId} (${input.status})`,
+        commit: input.commit,
+        files: input.filesChanged,
+        actor: result.reported_by,
+        taskId: input.taskId,
+        status: input.status,
+      });
+    } catch {
+      // ignore
+    }
 
     return result;
   }
@@ -323,6 +347,17 @@ export class AgentBridge {
         ? `\nBinding architectural decisions (do not contradict): ${input.decisionRefs.map((d) => `\`${d}\``).join(', ')} in \`.agentic/specs/decisions/\``
         : '',
       ``,
+      ...(input.worktree
+        ? [
+            `## 3b. Where To Work (isolated checkout)`,
+            `This task shares a wave with others, so it has its own git worktree:`,
+            `- directory: \`${input.worktree.directory}\``,
+            `- branch: \`${input.worktree.branch}\``,
+            `Run every command from that directory. Do not edit the main checkout: a teammate`,
+            `or another agent is working there at the same time.`,
+            ``,
+          ]
+        : []),
       `## 4. Ownership Boundaries (hard limits)`,
       `- WRITE (only these): ${c.ownership.write.map((p) => `\`${p}\``).join(', ') || '(none)'}`,
       `- READ-ONLY: ${readonly.length > 0 ? readonly.map((p) => `\`${p}\``).join(', ') : '(everything else in the repo)'}`,
@@ -336,6 +371,20 @@ export class AgentBridge {
       `Never weaken, skip, or delete an existing test to get to green.`,
       ``,
       `## 6. Definition Of Done For This Handoff`,
+      ...(input.policy
+        ? [
+            `Policy for this change (classified \`${input.policy.changeKind}\`):`,
+            `- TDD is **${input.policy.tdd}**${
+              input.policy.tdd === 'required'
+                ? ': a report without \`--tests\` is rejected'
+                : ': tests are still expected wherever behaviour changes'
+            }`,
+            `- One atomic commit per task is **${input.policy.atomicCommit ? 'required' : 'optional'}**${
+              input.policy.atomicCommit ? ': a report without a resolvable \`--commit\` is rejected' : ''
+            }`,
+            ``,
+          ]
+        : []),
       `- [ ] Test exists for every acceptance criterion listed in section 3`,
       `- [ ] \`${input.testCommand}\` exits 0 on the whole suite (no regressions)`,
       `- [ ] Only owned paths were modified`,
@@ -402,6 +451,9 @@ export class AgentBridge {
         lines.push(
           `- \`${task.task_id}\` — domain \`${task.domain}\`, agent \`${task.agent}\`${task.skills.length ? `, skills ${task.skills.join('/')}` : ''} → prompt: \`${task.prompt_file}\``
         );
+        if (task.worktree) {
+          lines.push(`  - isolated checkout: \`${task.worktree}\` (branch \`${task.branch}\`)`);
+        }
       }
       lines.push(``);
     }

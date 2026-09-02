@@ -8,9 +8,10 @@ import { SpecEngine } from './spec-engine.js';
 import { IdRegistry } from './id-registry.js';
 import { TeamCoordinator } from './team.js';
 import { SkillRegistry } from './skill-registry.js';
+import { PolicyEngine } from './policy-engine.js';
 import { ModuleDetector } from './module-detector.js';
 import { ComplexityLevel } from '../types/config.js';
-import { WorkPackage } from '../types/task.js';
+import { WorkPackage, WorkPackageSlice } from '../types/task.js';
 import { RunDescriptor } from '../types/run.js';
 import { ExecutionMode } from '../types/execution.js';
 
@@ -28,6 +29,14 @@ export interface PromptDispatchOptions {
   executionMode?: ExecutionMode;
   force?: boolean;
   observeTests?: boolean;
+  /**
+   * Decomposition of the request, authored by a human or an agent. Each slice
+   * becomes its own requirement, spec and task, so the DAG has real waves.
+   */
+  slices?: string[];
+  /** Let independent slices share a wave instead of chaining them. */
+  parallelSlices?: boolean;
+  noWorktrees?: boolean;
 }
 
 /**
@@ -51,6 +60,7 @@ export class PromptOrchestrator {
   private idRegistry: IdRegistry;
   private team: TeamCoordinator;
   private skills: SkillRegistry;
+  private policy: PolicyEngine;
 
   constructor(projectRoot: string = process.cwd()) {
     this.projectRoot = path.resolve(projectRoot);
@@ -63,6 +73,7 @@ export class PromptOrchestrator {
     this.specEngine = new SpecEngine(this.projectRoot);
     this.team = new TeamCoordinator(this.projectRoot);
     this.skills = new SkillRegistry(this.projectRoot);
+    this.policy = new PolicyEngine(this.projectRoot);
   }
 
   public async dispatchPrompt(
@@ -148,6 +159,52 @@ export class PromptOrchestrator {
     console.log(`+ Contract: ${path.relative(this.projectRoot, specFile)}`);
     this.printSkillHint('specify', domain, 'enrich this contract (keep the registry ids)');
 
+    // ---- Decomposition ----------------------------------------------------
+    // Each slice gets its own requirement id and contract. The framework never
+    // invents the split: it compiles the one the operator declared.
+    const sliceTexts = (options.slices || []).map((slice) => slice.trim()).filter((slice) => slice.length > 0);
+    const slices: WorkPackageSlice[] = [];
+
+    if (sliceTexts.length > 0) {
+      console.log(`\n>>> Decomposing into ${sliceTexts.length} slice(s)...`);
+      const detector = new ModuleDetector(this.projectRoot);
+      const structure = detector.detect();
+
+      sliceTexts.forEach((sliceText, index) => {
+        const sliceIds = this.idRegistry.allocateWorkUnit({ runId, title: sliceText.slice(0, 80) });
+        const sliceDomain = this.inferDomain(sliceText);
+        const sliceBriefing = this.bmadEngine.enhancePrompt(sliceText, { domain: sliceDomain });
+        const sliceSpec = this.specEngine.generateGitHubSpecKit({
+          reqId: sliceIds.reqId,
+          phaseId,
+          milestone: 'M01',
+          promptText: sliceText,
+          bmad: sliceBriefing,
+          decisions: decisionRecords,
+        });
+        const sliceSpecFile = this.specEngine.saveGitHubSpecKit(sliceSpec);
+
+        const sliceModule = structure.modules.find((m) =>
+          sliceText.toLowerCase().includes(m.name.toLowerCase())
+        );
+
+        slices.push({
+          requirement: sliceIds.reqId,
+          title: sliceText,
+          domain: sliceDomain,
+          scope: sliceModule ? [`${sliceModule.relativePath}/**`] : undefined,
+          // Sequential by default: the operator opts into parallelism, and the
+          // compiler still serializes any pair whose write paths overlap.
+          depends_on: !options.parallelSlices && index > 0 ? [slices[index - 1].requirement] : [],
+          spec_file: path.relative(this.projectRoot, sliceSpecFile),
+        });
+
+        console.log(
+          `+ ${sliceIds.reqId} [${sliceDomain}] ${sliceText}${sliceModule ? ` (module: ${sliceModule.name})` : ''}`
+        );
+      });
+    }
+
     // ---- Work package -----------------------------------------------------
     const moduleDetector = new ModuleDetector(this.projectRoot);
     const structure = moduleDetector.detect();
@@ -168,19 +225,21 @@ export class PromptOrchestrator {
         include: scopeIncludes,
         exclude: bmadBriefing.business.scope_out,
       },
-      requirements: [reqId],
+      requirements: slices.length > 0 ? slices.map((slice) => slice.requirement) : [reqId],
+      slices: slices.length > 0 ? slices : undefined,
+      change_kind: this.policy.classify(trimmedPrompt, { domain, complexity }).kind,
       dependencies: [],
       risks: [...bmadBriefing.delivery.key_risks, ...grillResult.unresolved_items],
       blockers: [],
       complexity,
-      expected_domains: [domain],
+      expected_domains: slices.length > 0 ? Array.from(new Set(slices.map((s) => s.domain || domain))) : [domain],
       human_gate_required: complexity === 'XL' || domain === 'security',
     };
     this.planner.saveWorkPackage(workPackage);
     console.log(
-      `\n+ Work package ${phaseId} [${complexity}] domain=${domain} requirement=${reqId}${
-        targetModule ? ` (module: ${targetModule.name} -> ${targetModule.relativePath}/**)` : ''
-      }`
+      `\n+ Work package ${phaseId} [${complexity}] kind=${workPackage.change_kind} domain=${domain} ${
+        slices.length > 0 ? `slices=${slices.length}` : `requirement=${reqId}`
+      }${targetModule ? ` (module: ${targetModule.name} -> ${targetModule.relativePath}/**)` : ''}`
     );
 
     // ---- Delivery cycle ---------------------------------------------------
@@ -196,6 +255,7 @@ export class PromptOrchestrator {
       executionMode: options.executionMode,
       force: options.force,
       observeTests: options.observeTests,
+      noWorktrees: options.noWorktrees,
       resume: false,
     });
 

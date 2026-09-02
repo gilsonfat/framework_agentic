@@ -30,6 +30,10 @@ export type AuditEventType =
   | 'LEASE_RELEASED'
   | 'LEASE_DENIED'
   | 'DECLARED_STATE_SYNCED'
+  | 'POLICY_VIOLATION'
+  | 'POLICY_OVERRIDDEN'
+  | 'WORKTREE_CREATED'
+  | 'WORKTREE_REMOVED'
   | 'AUDIT_INITIALIZED';
 
 export interface AuditEvent {

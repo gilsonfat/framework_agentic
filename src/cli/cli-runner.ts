@@ -23,9 +23,13 @@ import { AgentIntegrations, ALL_PRODUCT_IDS } from '../core/agent-integrations.j
 import { SkillStage } from '../types/skills.js';
 import { AgentProductId } from '../types/integrations.js';
 import { Migrator } from '../core/migrator.js';
+import { ModuleDetector } from '../core/module-detector.js';
 import { ArtifactValidator } from '../core/artifact-validator.js';
 import { ARTIFACT_SCHEMA_VERSION } from '../core/artifact-schema.js';
 import { CliError, reportError, requireInitialized } from './errors.js';
+import { PolicyEngine } from '../core/policy-engine.js';
+import { WorktreeManager } from '../core/worktree-manager.js';
+import { ChangeKind } from '../types/policy.js';
 import { ExecutionMode } from '../types/execution.js';
 
 function resolveTarget(options: { target?: string }, projectRoot: string): string {
@@ -223,10 +227,21 @@ export function createCli(projectRoot: string = process.cwd()): Command {
     .option('--dry-run', 'Produce artifacts and prompt packs without executing tests or closing work', false)
     .option('-m, --mode <mode>', 'Execution mode: delegated | command')
     .option('--observe-tests', 'Run the test suite during OBSERVE to record a baseline', false)
+    .option(
+      '--split <slice>',
+      'Decompose the request into slices (repeat the flag); each becomes its own REQ and task',
+      (value: string, previous: string[]) => [...previous, value],
+      [] as string[]
+    )
+    .option('--parallel', 'Let independent slices share a wave instead of chaining them', false)
+    .option('--no-worktrees', 'Do not create git worktrees for parallel tasks')
     .option('-f, --force', 'Take over a phase lease held by a teammate', false)
     .action(async (instructionsArray: string[], options) => {
       const targetDir = resolveInitialized(options, projectRoot, 'prompt');
       await new PromptOrchestrator(targetDir).dispatchPrompt(instructionsArray.join(' '), {
+        slices: options.split,
+        parallelSlices: options.parallel,
+        noWorktrees: options.worktrees === false,
         domain: options.domain,
         complexity: options.complexity,
         interactiveGrill: options.interactiveGrill,
@@ -306,6 +321,7 @@ export function createCli(projectRoot: string = process.cwd()): Command {
     .option('--dry-run', 'Prepare artifacts without executing tests or closing work', false)
     .option('--no-resume', 'Start a new run even if one is parked awaiting an agent')
     .option('--observe-tests', 'Run the test suite during OBSERVE', false)
+    .option('--no-worktrees', 'Do not create git worktrees for parallel tasks')
     .option('-f, --force', 'Take over a phase lease held by a teammate', false)
     .action(async (options) => {
       const targetDir = resolveInitialized(options, projectRoot, 'run');
@@ -316,6 +332,7 @@ export function createCli(projectRoot: string = process.cwd()): Command {
         dryRun: options.dryRun,
         resume: options.resume,
         observeTests: options.observeTests,
+        noWorktrees: options.worktrees === false,
         force: options.force,
       });
 
@@ -341,28 +358,108 @@ export function createCli(projectRoot: string = process.cwd()): Command {
     .option('--commit <sha>', 'Commit hash produced by this task')
     .option('--note <text>', 'Free-form note (reason for blocked/failed)')
     .option('-r, --run <runId>', 'Run id (defaults to the current run)')
+    .option('--force', 'Record the report even if it violates a policy (recorded as an override)', false)
     .action((taskId: string, options) => {
       const targetDir = resolveInitialized(options, projectRoot, 'report');
-      const runId = options.run || new Orchestrator(targetDir).loadCurrentRun()?.run_id;
+      const orchestrator = new Orchestrator(targetDir);
+      const currentRun = orchestrator.loadCurrentRun();
+      const runId = options.run || currentRun?.run_id;
       if (!runId) {
-        console.error('No current run found. Start one with `agentic run` or pass --run <runId>.');
-        process.exitCode = 1;
-        return;
+        throw new CliError(
+          'No current run to report against.',
+          'Start one with: agentic prompt "<instruction>"  (or pass --run <runId>)'
+        );
       }
 
+      const filesChanged = splitList(options.files);
+      const testsAdded = splitList(options.tests);
+
+      // The policies in policies.yaml only become real at the moment a task
+      // claims to be done: this is where TDD and atomic commits are provable.
+      const policy = new PolicyEngine(targetDir);
+      const classification = policy.classificationFor(
+        (currentRun?.work_package?.change_kind as ChangeKind | undefined) || 'feature'
+      );
+      const violations = policy.checkTaskReport(
+        { taskId, status: options.status, filesChanged, testsAdded, commit: options.commit },
+        classification
+      );
+
+      if (violations.length > 0 && !options.force) {
+        const auditor = new AuditLogger(targetDir);
+        for (const violation of violations) {
+          auditor.emit(runId, 'POLICY_VIOLATION', {
+            task: taskId,
+            metadata: { code: violation.code, policy: violation.policy, message: violation.message },
+          });
+        }
+        throw new CliError(
+          `Report rejected by ${violations.length} policy rule(s):\n` +
+            violations.map((v) => `    - [${v.policy}] ${v.message}\n      ${v.remedy}`).join('\n'),
+          'Fix the report, or record it as a deliberate exception with --force.'
+        );
+      }
+
+      const overrideNotes = violations.map((v) => `POLICY OVERRIDE [${v.policy}]: ${v.message}`);
       const result = new AgentBridge(targetDir).recordResult({
         runId,
         taskId,
         status: options.status,
-        filesChanged: splitList(options.files),
-        testsAdded: splitList(options.tests),
+        filesChanged,
+        testsAdded,
         commit: options.commit,
-        notes: options.note ? [options.note] : undefined,
+        notes: [...(options.note ? [options.note] : []), ...overrideNotes],
         error: options.status !== 'completed' ? options.note : undefined,
       });
 
+      if (violations.length > 0) {
+        const auditor = new AuditLogger(targetDir);
+        for (const violation of violations) {
+          auditor.emit(runId, 'POLICY_OVERRIDDEN', {
+            task: taskId,
+            metadata: { code: violation.code, policy: violation.policy, actor: result.reported_by },
+          });
+        }
+        console.log(`! Recorded with ${violations.length} policy override(s); the audit stream keeps the reason.`);
+      }
+
       console.log(`+ ${result.task_id} reported as ${result.status} by ${result.reported_by} (run ${runId})`);
       console.log(`  Close the cycle with: agentic verify`);
+    });
+
+  program
+    .command('record [message]')
+    .alias('changelog')
+    .description('Record code modifications (uncommitted diff or recent commits) into the respective module CHANGELOG.md')
+    .option('-m, --message <text>', 'Description of the modification')
+    .option('--files <list>', 'Comma-separated list of changed files (defaults to git diff)')
+    .option('--commit <sha>', 'Commit hash or reference')
+    .option('--module <name>', 'Specific module to record to')
+    .option('-t, --target <path>', 'Target project directory', projectRoot)
+    .action((messageArg: string | undefined, options) => {
+      const targetDir = resolveInitialized(options, projectRoot, 'record');
+      const message = options.message || messageArg;
+      const files = options.files ? splitList(options.files as string) : undefined;
+      const result = new ModuleDetector(targetDir).recordModuleChanges({
+        message,
+        files,
+        commit: options.commit,
+        module: options.module,
+      });
+
+      if (result.updatedModules.length === 0) {
+        console.log('No modified files detected across modules.');
+        return;
+      }
+
+      console.log(`\n=============================================================`);
+      console.log(`   Agentic SDLC — Registro de Alterações em Módulos          `);
+      console.log(`=============================================================\n`);
+      console.log(`Autor: ${result.actor} | Ref: ${result.commit} | Total Arquivos: ${result.totalFiles}`);
+      for (const u of result.updatedModules) {
+        console.log(`+ [Módulo ${u.module}] ${u.filesCount} arquivo(s) registrado(s) -> ${u.changelogPath}`);
+      }
+      console.log(`\n>>> Registros concluídos com sucesso.`);
     });
 
   program
@@ -671,6 +768,53 @@ export function createCli(projectRoot: string = process.cwd()): Command {
         }
       }
       console.log('');
+    });
+
+  // -------------------------------------------------------------- worktree ---
+  const worktree = program
+    .command('worktree')
+    .description('Isolated checkouts created for tasks that share a wave');
+
+  worktree
+    .command('list', { isDefault: true })
+    .description('List the worktrees this project created')
+    .option('-t, --target <path>', 'Target project directory', projectRoot)
+    .action((options) => {
+      const manager = new WorktreeManager(resolveInitialized(options, projectRoot, 'worktree list'));
+      const worktrees = manager.list();
+
+      if (worktrees.length === 0) {
+        const support = manager.isSupported();
+        console.log(
+          support.ok
+            ? 'No worktrees. They are created only when a wave has more than one task.'
+            : `Worktrees unavailable here: ${support.reason}.`
+        );
+        return;
+      }
+
+      for (const entry of worktrees) {
+        console.log(`${entry.task_id.padEnd(12)} ${entry.branch.padEnd(40)} ${entry.directory}`);
+      }
+      console.log('\nRemove them with: agentic worktree clean');
+    });
+
+  worktree
+    .command('clean')
+    .description('Remove the worktrees (branches are kept: they may hold unmerged work)')
+    .option('-t, --target <path>', 'Target project directory', projectRoot)
+    .option('-r, --run <runId>', 'Only the worktrees of this run')
+    .option('-f, --force', 'Remove even with uncommitted changes inside', false)
+    .action((options) => {
+      const result = new WorktreeManager(resolveInitialized(options, projectRoot, 'worktree clean')).cleanup({
+        runId: options.run,
+        force: options.force,
+      });
+
+      console.log(`+ Removed: ${result.removed.join(', ') || 'nothing'}`);
+      if (result.kept.length > 0) {
+        console.log(`i Kept: ${result.kept.join(', ')} (use --force if they have uncommitted changes)`);
+      }
     });
 
   // ---------------------------------------------------------------- skills ---

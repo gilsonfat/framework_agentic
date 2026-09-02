@@ -77,13 +77,18 @@ DONE until \`agentic verify\` collects an evidence record from a real test execu
 5. **Specify before implementing.** Stable ids from the registry: \`REQ-###\`, \`SPEC-###\`,
    \`AC-###.#\`, \`ADR-###\`, \`TASK-###\`. Never invent an id by hand.
 6. **Strict TDD.** RED (failing test that encodes each AC) -> GREEN (minimum code) -> REFACTOR.
-   Never weaken, skip or delete a test to reach green.
+   Never weaken, skip or delete a test to reach green. The prompt pack states whether TDD is
+   \`required\` for this change kind; if it is, \`agentic report\` **rejects** a completed task
+   with no \`--tests\`, and an atomic \`--commit\` that resolves in git is mandatory.
 7. **Respect ownership.** A task prompt pack lists WRITE / READ-ONLY / FORBIDDEN paths.
    Touching anything outside WRITE invalidates the task: report \`blocked\` instead.
 8. **Human gates block.** Security, authentication, destructive migrations, XL complexity and
    exhausted remediation stop the run until a human decides (\`agentic gate approve <id>\`).
 9. **Documentation comes from reality.** As-built specs are generated from the diff and the
    evidence, never written aspirationally.
+10. **A state you cannot read is not a state.** If \`agentic status\` reports LEGACY or
+   UNREADABLE, the artifacts came from another build: run \`agentic migrate --apply\` (or
+   update the CLI) before trusting anything it says.
 
 ---
 
@@ -95,7 +100,8 @@ DONE until \`agentic verify\` collects an evidence record from a real test execu
 4. **PLAN & SPECIFY** - work package plus Spec Kit contract in \`.agentic/specs/planned/\`.
 5. **HUMAN GATES** - evaluated before any dispatch; pending gates stop the run.
 6. **COMPILE DAG** - Kahn ordering, cycle detection, write-conflict detection.
-7. **DISPATCH** - one prompt pack per task in \`.agentic/execution/inbox/\`, in wave order.
+7. **DISPATCH** - one prompt pack per task in \`.agentic/execution/inbox/\`, in wave order. Tasks
+   sharing a wave get their own git worktree; work inside it, never in the main checkout.
 8. **IMPLEMENT (${label})** - the agent's job: TDD, owned paths only, one atomic commit per task.
 9. **REPORT** - \`agentic report <TASK-ID> --status completed|blocked\`.
 10. **REVIEW** - L1 self, L2 suite regression, L3 acceptance criteria, L4 security (read-only).
@@ -170,6 +176,9 @@ They compose: the CLI produces the question set, the skill conducts the conversa
 | \`agentic skills [list \\| stage <s> \\| install <pack>]\` | Skill packs mapped per stage, and their real availability |
 | \`agentic audit verify \\| tail\` | Audit stream integrity and history |
 | \`agentic observe [--tests]\` / \`agentic reconcile [--sync]\` | State inspection and repair |
+| \`agentic migrate [--apply]\` | Bring \`.agentic\` artifacts to the current schema version |
+| \`agentic prompt "<x>" --split "<a>" --split "<b>" [--parallel]\` | Decompose an epic into slices, each with its own REQ, spec and task |
+| \`agentic worktree list \\| clean\` | Isolated checkouts created for parallel waves |
 | \`agentic status\` / \`agentic doctor\` / \`agentic ids\` | Dashboard, diagnostics, identifiers |
 | \`agentic resume [--apply]\` | Inspect and resume an interrupted run |
 `;

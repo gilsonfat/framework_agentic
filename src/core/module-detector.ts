@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
 
 export interface DetectedModule {
   name: string;
@@ -265,4 +266,198 @@ agentic team claim <MODULE-NAME> --note "Implementando funcionalidade X"
 
     return { created, preserved };
   }
+
+  /**
+   * Records changes (files touched, actor, commit/ref, message) into
+   * the respective .planning/modules/<mod>/CHANGELOG.md file.
+   */
+  public recordModuleChanges(options: RecordChangeOptions = {}): RecordChangeResult {
+    const info = this.detect();
+    let files = options.files ? [...options.files] : [];
+
+    // If no files were explicitly supplied, inspect git status
+    if (files.length === 0) {
+      try {
+        const statusOutput = execSync('git status --porcelain', {
+          cwd: this.projectRoot,
+          encoding: 'utf8',
+          stdio: ['pipe', 'pipe', 'ignore'],
+        });
+        const lines = statusOutput.split('\n');
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          const parts = trimmed.split(/\s+/);
+          if (parts.length >= 2) {
+            const filePath = parts[parts.length - 1];
+            if (
+              filePath &&
+              !filePath.startsWith('.agentic/') &&
+              !filePath.startsWith('.planning/') &&
+              !filePath.startsWith('.claude/') &&
+              !filePath.startsWith('.gemini/') &&
+              !filePath.startsWith('.cursor/')
+            ) {
+              files.push(filePath.replace(/\\/g, '/'));
+            }
+          }
+        }
+      } catch {
+        // git unavailable or not a repo
+      }
+
+      // If still empty, check last commit
+      if (files.length === 0) {
+        try {
+          const diffOutput = execSync('git diff-tree --no-commit-id --name-only -r HEAD', {
+            cwd: this.projectRoot,
+            encoding: 'utf8',
+            stdio: ['pipe', 'pipe', 'ignore'],
+          });
+          files = diffOutput
+            .split('\n')
+            .map((f) => f.trim())
+            .filter(
+              (f) =>
+                f.length > 0 &&
+                !f.startsWith('.agentic/') &&
+                !f.startsWith('.planning/') &&
+                !f.startsWith('.claude/') &&
+                !f.startsWith('.gemini/') &&
+                !f.startsWith('.cursor/')
+            );
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    // Resolve author and commit
+    let actor = options.actor;
+    if (!actor) {
+      try {
+        const name = execSync('git config user.name', { cwd: this.projectRoot, encoding: 'utf8' }).trim();
+        const email = execSync('git config user.email', { cwd: this.projectRoot, encoding: 'utf8' }).trim();
+        if (name && email) actor = `${name} <${email}>`;
+        else if (email) actor = email;
+        else if (name) actor = name;
+      } catch {}
+    }
+    if (!actor) {
+      actor = process.env.USER || process.env.USERNAME || 'unknown-actor';
+    }
+
+    let commit = options.commit;
+    if (!commit) {
+      try {
+        commit = execSync('git rev-parse --short HEAD', { cwd: this.projectRoot, encoding: 'utf8' }).trim();
+      } catch {
+        commit = 'working-tree';
+      }
+    }
+
+    // Map files to modules
+    const moduleMap = new Map<string, string[]>();
+    for (const file of files) {
+      const normalizedFile = file.replace(/\\/g, '/');
+      let matchedModule: string | undefined;
+
+      if (options.module) {
+        matchedModule = options.module;
+      } else {
+        for (const mod of info.modules) {
+          const modRel = mod.relativePath.replace(/\\/g, '/');
+          if (
+            normalizedFile.startsWith(`${modRel}/`) ||
+            normalizedFile === modRel ||
+            normalizedFile.startsWith(`apps/${mod.name}/`) ||
+            normalizedFile.startsWith(`packages/${mod.name}/`) ||
+            normalizedFile.startsWith(`modules/${mod.name}/`) ||
+            normalizedFile.startsWith(`src/modules/${mod.name}/`) ||
+            normalizedFile.includes(`/${mod.name}/`)
+          ) {
+            matchedModule = mod.name;
+            break;
+          }
+        }
+      }
+
+      const targetMod = matchedModule || 'geral';
+      if (!moduleMap.has(targetMod)) {
+        moduleMap.set(targetMod, []);
+      }
+      moduleMap.get(targetMod)!.push(normalizedFile);
+    }
+
+    const updatedModules: RecordChangeResult['updatedModules'] = [];
+    const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 16);
+    const message = options.message || 'Atualização e alterações de código no módulo';
+
+    for (const [modName, modFiles] of moduleMap.entries()) {
+      if (modFiles.length === 0) continue;
+
+      let changelogPath: string;
+      if (modName === 'geral') {
+        const planningDir = path.join(this.projectRoot, '.planning');
+        if (!fs.existsSync(planningDir)) fs.mkdirSync(planningDir, { recursive: true });
+        changelogPath = path.join(planningDir, 'CHANGELOG.md');
+      } else {
+        const modPlanningDir = path.join(this.projectRoot, '.planning', 'modules', modName);
+        if (!fs.existsSync(modPlanningDir)) fs.mkdirSync(modPlanningDir, { recursive: true });
+        changelogPath = path.join(modPlanningDir, 'CHANGELOG.md');
+      }
+
+      if (!fs.existsSync(changelogPath)) {
+        const header = `# Changelog: ${modName}\n\nHistórico detalhado de alterações, tarefas implementadas e entregas verificadas neste módulo.\n\n## Histórico de Entregas\n`;
+        fs.writeFileSync(changelogPath, header, 'utf8');
+      }
+
+      const fileItems = modFiles.map((f) => `  - \`${f}\``).join('\n');
+      const entry = `\n### [${timestamp}] ${message}
+- **Autor / Usuário**: ${actor}
+- **Commit / Ref**: \`${commit}\`
+- **Status**: ${options.status || 'Modificação Registrada'}
+${options.taskId ? `- **Tarefa / Task**: \`${options.taskId}\`\n` : ''}${options.phase ? `- **Fase**: \`${options.phase}\`\n` : ''}- **Arquivos Alterados no Módulo (${modFiles.length})**:
+${fileItems}
+`;
+
+      fs.appendFileSync(changelogPath, entry, 'utf8');
+      updatedModules.push({
+        module: modName,
+        changelogPath,
+        filesCount: modFiles.length,
+        files: modFiles,
+      });
+    }
+
+    return {
+      updatedModules,
+      totalFiles: files.length,
+      actor,
+      commit,
+    };
+  }
+}
+
+export interface RecordChangeOptions {
+  message?: string;
+  commit?: string;
+  files?: string[];
+  actor?: string;
+  taskId?: string;
+  phase?: string;
+  status?: string;
+  module?: string;
+}
+
+export interface RecordChangeResult {
+  updatedModules: Array<{
+    module: string;
+    changelogPath: string;
+    filesCount: number;
+    files: string[];
+  }>;
+  totalFiles: number;
+  actor: string;
+  commit: string;
 }

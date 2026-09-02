@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { Observer } from './observer.js';
 import { Reconciler } from './reconciler.js';
 import { TeamCoordinator } from './team.js';
+import { ARTIFACT_SCHEMA_VERSION } from './artifact-schema.js';
 import { ModuleDetector } from './module-detector.js';
 import { PlanningIngestor } from './planning-ingestor.js';
 
@@ -149,6 +150,7 @@ export class Scaffolder {
         declaredFile,
         JSON.stringify(
           {
+            schema_version: ARTIFACT_SCHEMA_VERSION,
             milestone: 'M01',
             phase: 'P01',
             requirements: {},
