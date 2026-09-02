@@ -17,6 +17,23 @@ export interface ReviewReport {
   timestamp: string;
 }
 
+/**
+ * The 4-layer review, and where each layer actually happens:
+ *
+ * - **L1 (worker self-review)** - performed by the implementing agent and
+ *   surfaced here through the reported task status (`failed`/`blocked` becomes a
+ *   MAJOR finding).
+ * - **L2 (integration)** - the executed test suite. It is not re-implemented
+ *   here: `EvidenceCollector` runs it and `Verifier` judges it, so there is a
+ *   single source of truth for "the suite is green".
+ * - **L3 (independent correctness)** - acceptance-criteria checking in
+ *   `Verifier`, from the spec rather than from the implementation.
+ * - **L4 (security, read-only)** - `runSecurityChecks` below, over the files the
+ *   agent reported as changed.
+ *
+ * `evaluateReview` aggregates whatever findings the caller collected; a CRITICAL
+ * finding stops the run before verification.
+ */
 export class ReviewPipeline {
   public evaluateReview(runId: string, findings: ReviewFinding[]): ReviewReport {
     let status: 'PASS' | 'FINDINGS' | 'CRITICAL' = 'PASS';

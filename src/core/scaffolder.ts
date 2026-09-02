@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { Observer } from './observer.js';
 import { Reconciler } from './reconciler.js';
+import { TeamCoordinator } from './team.js';
 
 export interface ScaffoldOptions {
   force?: boolean;
@@ -37,16 +38,22 @@ export class Scaffolder {
       'state/history',
       'planning/history',
       'specs/planned',
+      'specs/decisions',
       'specs/as-built',
       'tasks/current',
       'tasks/history',
       'execution/work-packages',
       'execution/agents',
       'execution/runs',
+      'execution/inbox',
+      'execution/results',
       'verification/current',
       'verification/reports',
       'verification/evidence',
       'reconciliation/reports',
+      'gates',
+      'registry',
+      'team/leases',
       'prompts',
       'templates',
       'audit',
@@ -63,15 +70,36 @@ export class Scaffolder {
       }
     }
 
-    // Copy directories recursively if source exists
+    // Copy ONLY the reusable framework assets. Copying the whole `.agentic`
+    // directory leaked this repository's own specs, decisions, gates, leases,
+    // evidence and run state into every scaffolded project.
+    const templateSubtrees = ['orchestrator', 'prompts', 'templates'];
+    const templateFiles = ['README.md'];
+
     if (fs.existsSync(sourceAgenticDir)) {
-      this.copyDirRecursive(
-        sourceAgenticDir,
-        targetAgenticDir,
-        options.force || false,
-        createdFiles,
-        skippedFiles
-      );
+      for (const subtree of templateSubtrees) {
+        const src = path.join(sourceAgenticDir, subtree);
+        if (!fs.existsSync(src)) continue;
+        this.copyDirRecursive(
+          src,
+          path.join(targetAgenticDir, subtree),
+          options.force || false,
+          createdFiles,
+          skippedFiles
+        );
+      }
+
+      for (const file of templateFiles) {
+        const src = path.join(sourceAgenticDir, file);
+        const dest = path.join(targetAgenticDir, file);
+        if (!fs.existsSync(src)) continue;
+        if (!fs.existsSync(dest) || options.force) {
+          fs.copyFileSync(src, dest);
+          createdFiles.push(path.relative(process.cwd(), dest));
+        } else {
+          skippedFiles.push(path.relative(process.cwd(), dest));
+        }
+      }
     }
 
     // Ensure audit log exists
@@ -133,6 +161,13 @@ export class Scaffolder {
       createdFiles.push('.agentic/state/declared-state.json');
     }
 
+    // Declare which artifacts are shared team truth and which are machine-local,
+    // and make the append-only audit stream mergeable across branches.
+    const team = new TeamCoordinator(targetProjectRoot);
+    const policy = team.ensureCollaborationPolicy({ force: options.force });
+    createdFiles.push(...policy.written);
+    skippedFiles.push(...policy.skipped);
+
     // Auto-observe and reconcile if requested or on new bootstrap
     if (options.autoObserve) {
       const observer = new Observer(targetProjectRoot);
@@ -168,8 +203,15 @@ export class Scaffolder {
         }
         this.copyDirRecursive(srcPath, destPath, force, createdFiles, skippedFiles);
       } else {
-        // Skip history / transient files
-        if (srcPath.includes('history') || srcPath.includes('runs') || entry.name.endsWith('.log')) {
+        // Skip history, run-scoped and generated artifacts: only reusable
+        // templates and configuration may reach a scaffolded project.
+        if (
+          srcPath.includes('history') ||
+          srcPath.includes('runs') ||
+          entry.name.endsWith('.log') ||
+          entry.name.startsWith('BMAD-') ||
+          entry.name.startsWith('RUN-')
+        ) {
           continue;
         }
 

@@ -1,0 +1,10 @@
+description = "Show the team skills mapped to each stage of the cycle"
+
+prompt = """
+run_shell_command: agentic skills
+
+Then, for the stage we are in: agentic skills stage <stage> --installed
+
+Use the team's mapped skill instead of improvising. If a mapped skill is not installed on
+this machine, say so and use the native path rather than silently diverging.
+"""

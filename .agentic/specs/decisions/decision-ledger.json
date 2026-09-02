@@ -1,0 +1,112 @@
+{
+  "ADR-942": {
+    "id": "ADR-942",
+    "title": "Architecture Decision: Sistema de notificações com webhook e push",
+    "status": "ACCEPTED",
+    "date": "2026-09-02",
+    "context": "Requirement context derived from prompt: \"Criar sistema de notificações com webhook e push\". Implement robust, production-ready solution for: \"Criar sistema de notificações com webhook e push\" ensuring high reliability, testability, and zero regressions.",
+    "decision": "Adopt Modular Service / Clean Architecture with explicit contract validation, isolated domain services, and strict TDD verification.",
+    "alternatives_considered": [
+      {
+        "option": "Direct monolithic in-handler implementation without layer separation",
+        "pros": [
+          "Faster initial code creation"
+        ],
+        "cons": [
+          "Zero unit testability, tight coupling, hard to maintain and verify"
+        ]
+      },
+      {
+        "option": "Full microservice extraction with distributed event bus",
+        "pros": [
+          "High horizontal isolation"
+        ],
+        "cons": [
+          "Excessive operational overhead and network latency for single domain scope"
+        ]
+      }
+    ],
+    "consequences": {
+      "positive": [
+        "High testability and 100% automated verification capability",
+        "Clear security and validation boundaries",
+        "Decoupled business logic ready for extension"
+      ],
+      "negative": [
+        "Requires structured interfaces and schema contracts upfront"
+      ],
+      "risks": [
+        "Developers must adhere to layer boundaries and not bypass schemas"
+      ]
+    },
+    "trade_offs": [
+      "[AMBIGUITY] How should malformed, empty, or unexpected input payloads be handled? -> Strict validation: all inputs validated via runtime schema validator (Zod/Ajv); reject malformed payloads immediately with HTTP 400 and code BAD_REQUEST.",
+      "[FAILURE_MODE] What is the failure strategy if downstream dependencies (database, external API, disk) fail or timeout? -> Fail fast with deterministic error envelope (HTTP 502/503/500) and structured logging; wrap external network calls with timeout boundaries.",
+      "[TRADE_OFF] How is webhook idempotency and duplicate delivery guaranteed? -> Strict idempotency ledger: record event ID upon arrival in database; if already processed, return HTTP 200 immediately without reprocessing.",
+      "[PERFORMANCE] What is the precise automated test criterion for marking this requirement DONE? -> Comprehensive automated test suite: unit tests for domain logic + contract integration test validating status codes, headers, and payloads."
+    ],
+    "verification_criteria": [
+      "Automated test suite validates all contract inputs and outputs",
+      "No plain-text credentials or unsecured endpoints exposed",
+      "Verification report passes with 0 failures before requirement is marked DONE"
+    ],
+    "linked_requirements": [
+      "REQ-001"
+    ]
+  },
+  "ADR-718": {
+    "id": "ADR-718",
+    "title": "Architecture Decision: Fluxo de checkout com cartão de crédito",
+    "status": "ACCEPTED",
+    "date": "2026-09-02",
+    "context": "Requirement context derived from prompt: \"Implementar fluxo de checkout com cartão de crédito\". Implement robust, production-ready solution for: \"Implementar fluxo de checkout com cartão de crédito\" ensuring high reliability, testability, and zero regressions.",
+    "decision": "Adopt Modular Service / Clean Architecture with explicit contract validation, isolated domain services, and strict TDD verification.",
+    "alternatives_considered": [
+      {
+        "option": "Direct monolithic in-handler implementation without layer separation",
+        "pros": [
+          "Faster initial code creation"
+        ],
+        "cons": [
+          "Zero unit testability, tight coupling, hard to maintain and verify"
+        ]
+      },
+      {
+        "option": "Full microservice extraction with distributed event bus",
+        "pros": [
+          "High horizontal isolation"
+        ],
+        "cons": [
+          "Excessive operational overhead and network latency for single domain scope"
+        ]
+      }
+    ],
+    "consequences": {
+      "positive": [
+        "High testability and 100% automated verification capability",
+        "Clear security and validation boundaries",
+        "Decoupled business logic ready for extension"
+      ],
+      "negative": [
+        "Requires structured interfaces and schema contracts upfront"
+      ],
+      "risks": [
+        "Developers must adhere to layer boundaries and not bypass schemas"
+      ]
+    },
+    "trade_offs": [
+      "[AMBIGUITY] How should malformed, empty, or unexpected input payloads be handled? -> Strict validation: all inputs validated via runtime schema validator (Zod/Ajv); reject malformed payloads immediately with HTTP 400 and code BAD_REQUEST.",
+      "[FAILURE_MODE] What is the failure strategy if downstream dependencies (database, external API, disk) fail or timeout? -> Fail fast with deterministic error envelope (HTTP 502/503/500) and structured logging; wrap external network calls with timeout boundaries.",
+      "[TRADE_OFF] What architectural separation and module boundary is chosen for this implementation? -> Layered Domain Architecture: Controller/Handler -> Service Layer -> Repository/Gateway, covered by unit tests with mocked I/O.",
+      "[PERFORMANCE] What is the precise automated test criterion for marking this requirement DONE? -> Comprehensive automated test suite: unit tests for domain logic + contract integration test validating status codes, headers, and payloads."
+    ],
+    "verification_criteria": [
+      "Automated test suite validates all contract inputs and outputs",
+      "No plain-text credentials or unsecured endpoints exposed",
+      "Verification report passes with 0 failures before requirement is marked DONE"
+    ],
+    "linked_requirements": [
+      "REQ-611"
+    ]
+  }
+}

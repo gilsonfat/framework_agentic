@@ -57,15 +57,27 @@ export class RecoveryEngine {
         };
       }
 
+      // Task progress is read from reported results, not inferred from the
+      // presence of commits: a commit says nothing about which task produced it.
       const completedTasks: string[] = [];
       const pendingTasks: string[] = [];
+      const resultsDir = path.join(this.projectRoot, '.agentic', 'execution', 'results');
 
-      for (const task of run.tasks || []) {
-        if (run.commits && run.commits.length > 0) {
-          completedTasks.push(task.id);
-        } else {
-          pendingTasks.push(task.id);
+      for (const node of run.dag?.nodes || []) {
+        const resultFile = path.join(resultsDir, `${node.id}.json`);
+        let completed = false;
+        if (fs.existsSync(resultFile)) {
+          try {
+            const result = JSON.parse(fs.readFileSync(resultFile, 'utf8')) as {
+              run_id: string;
+              status: string;
+            };
+            completed = result.run_id === run.run_id && result.status === 'completed';
+          } catch {
+            completed = false;
+          }
         }
+        (completed ? completedTasks : pendingTasks).push(node.id);
       }
 
       let resumableState: OrchestratorState = run.status;
@@ -73,13 +85,20 @@ export class RecoveryEngine {
         resumableState = 'OBSERVING';
       }
 
+      const reason =
+        run.status === 'AWAITING_AGENT'
+          ? pendingTasks.length > 0
+            ? `Run ${run.run_id} is awaiting implementation of ${pendingTasks.length} task(s): ${pendingTasks.join(', ')}. Report them, then run \`agentic verify\`.`
+            : `Run ${run.run_id} has every task reported. Close it with \`agentic verify\`.`
+          : `Resuming run ${run.run_id} from checkpoint state ${resumableState}.`;
+
       return {
         canResume: true,
         runId: run.run_id,
         resumableState,
         completedTasks,
         pendingTasks,
-        reason: `Resuming run ${run.run_id} from checkpoint state ${resumableState}.`,
+        reason,
       };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);

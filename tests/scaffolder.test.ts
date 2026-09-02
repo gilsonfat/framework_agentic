@@ -36,6 +36,26 @@ describe('Scaffolder (CLI Project Initialization)', () => {
     expect(fs.existsSync(path.join(tempDir, '.agentic', 'templates', 'work-package.yaml'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, '.agentic', 'audit', 'events.jsonl'))).toBe(true);
 
+    // Collaboration policy is declared so teammates do not conflict on every merge.
+    expect(fs.existsSync(path.join(tempDir, '.gitattributes'))).toBe(true);
+    expect(fs.readFileSync(path.join(tempDir, '.gitattributes'), 'utf8')).toContain(
+      '.agentic/audit/events.jsonl merge=union'
+    );
+    expect(fs.existsSync(path.join(tempDir, '.agentic', '.gitignore'))).toBe(true);
+
+    // Team, gate and registry surfaces exist from the start.
+    expect(fs.existsSync(path.join(tempDir, '.agentic', 'team', 'leases'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, '.agentic', 'gates'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, '.agentic', 'registry'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, '.agentic', 'execution', 'inbox'))).toBe(true);
+
+    // The framework's own specs, decisions and run state must never be copied
+    // into a scaffolded project.
+    const plannedDir = path.join(tempDir, '.agentic', 'specs', 'planned');
+    expect(fs.readdirSync(plannedDir)).toEqual([]);
+    expect(fs.readdirSync(path.join(tempDir, '.agentic', 'specs', 'decisions'))).toEqual([]);
+    expect(fs.existsSync(path.join(tempDir, '.agentic', 'execution', 'current-run.json'))).toBe(false);
+
     // Verify Doctor on scaffolded project
     const doctor = new Doctor(tempDir);
     const report = doctor.runDiagnostics();

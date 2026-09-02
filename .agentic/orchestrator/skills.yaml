@@ -1,0 +1,95 @@
+version: 1
+
+# External skill packs, mapped to the stages of the 12-step cycle.
+#
+# A pack is a *technique library*, not a dependency: every stage has a native
+# path in this framework, and a pack is only recommended to the agent when it is
+# actually detected on the machine (see `agentic skills`). The point of this file
+# is that the whole team invokes the same skill at the same step.
+
+packs:
+  mattpocock:
+    name: Matt Pocock Skills
+    source: mattpocock/skills
+    enabled: true
+    invocation: "/{skill}"
+
+    install:
+      claude: claude plugins install mattpocock-skills
+      generic: npx skills@latest add mattpocock/skills
+      post_install: /setup-matt-pocock-skills
+
+    # Proof of installation. Paths are tried relative to the project and to $HOME;
+    # a `*` matches a prefix/substring on the last segment.
+    detect:
+      - .claude/plugins/*mattpocock*
+      - .claude/plugins/marketplaces/*mattpocock*
+      - .agents/skills/to-spec
+      - .agents/skills/grill-with-docs
+      - .cursor/skills/to-spec
+      - skills/engineering/to-spec
+
+    # Which skill leads each stage. Order matters: the first entry is the primary
+    # technique, the rest are supporting.
+    stages:
+      research:
+        - research
+      refine:
+        - grill-with-docs
+        - domain-modeling
+      probe:
+        - grill-me
+        - grilling
+      specify:
+        - to-spec
+      architect:
+        - codebase-design
+        - improve-codebase-architecture
+      compile:
+        - to-tickets
+      prototype:
+        - prototype
+      implement:
+        - implement
+        - tdd
+      review:
+        - code-review
+      remediate:
+        - diagnosing-bugs
+      merge:
+        - resolving-merge-conflicts
+      handoff:
+        - handoff
+      triage:
+        - triage
+      plan_multi_session:
+        - wayfinder
+
+    # Extra skills worth reaching for in a given domain, on top of the stage skills.
+    domains:
+      frontend:
+        - prototype
+      architecture:
+        - codebase-design
+      testing:
+        - tdd
+      security:
+        - code-review
+
+    # Disambiguation notes surfaced next to the recommendation.
+    aliases:
+      grill-me: >-
+        conducts the live interview. The framework's deterministic probe list and
+        ADR recording stay under `agentic grill` (slash command `/agentic-grill`).
+      tdd: >-
+        the red-green-refactor loop itself. Evidence for closure still comes from
+        `agentic verify`, never from the skill's own report.
+      to-spec: >-
+        use it to enrich the generated `.agentic/specs/planned/SPEC-###.md`; the
+        stable REQ/AC identifiers must keep coming from the registry.
+      to-tickets: >-
+        useful to decompose a work package, but the executable unit of work
+        remains the compiled task DAG in `.agentic/tasks/dag.json`.
+      code-review: >-
+        covers review layers L1 and L3. L2 is the executed suite and L4 is the
+        framework's read-only security pass.

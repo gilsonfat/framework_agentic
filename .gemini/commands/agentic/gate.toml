@@ -1,0 +1,11 @@
+description = "Review and decide pending human gates"
+
+prompt = """
+1. run_shell_command: agentic gate list
+2. For each gate, explain in plain language what it protects, what the run intends to do,
+   and the consequence of approving it. Do not decide on my behalf.
+3. Record my decision:
+   agentic gate approve <GATE-ID> --note "<rationale>"
+   agentic gate reject  <GATE-ID> --note "<rationale>"
+4. Continue: agentic run
+"""

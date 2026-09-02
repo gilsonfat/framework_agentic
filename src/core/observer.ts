@@ -2,21 +2,33 @@ import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 import { ObservedState } from '../types/state.js';
+import { EvidenceRecord } from '../types/evidence.js';
 import { ConfigLoader } from './config-loader.js';
+import { EvidenceCollector } from './evidence-collector.js';
+
+export interface ObserveOptions {
+  /**
+   * Execute the test suite to obtain real evidence. Defaults to the
+   * `evidence.run_tests_on_observe` setting; without it the observed test status
+   * is reported as `pending` (unknown) instead of being assumed to pass.
+   */
+  runTests?: boolean;
+}
 
 export class Observer {
   private projectRoot: string;
   private configLoader: ConfigLoader;
+  private lastEvidence?: EvidenceRecord;
 
   constructor(projectRoot: string = process.cwd(), configLoader?: ConfigLoader) {
     this.projectRoot = path.resolve(projectRoot);
     this.configLoader = configLoader || new ConfigLoader(this.projectRoot);
   }
 
-  public observe(runId: string): ObservedState {
+  public observe(runId: string, options: ObserveOptions = {}): ObservedState {
     const git = this.observeGit();
     const project = this.observeProject();
-    const tests = this.observeTests(project.scripts);
+    const tests = this.observeTests(runId, options);
     const specs = this.observeSpecs();
     const requirements = this.observeRequirements();
     const tasks = this.observeTasks();
@@ -29,6 +41,10 @@ export class Observer {
 
     if (tests.status === 'fail') {
       blockers.push(`Test suite is currently failing (${tests.failed} test(s) failed).`);
+    }
+
+    if (tests.status === 'pending') {
+      risks.push('Test status was not measured in this observation; no requirement may be closed from it.');
     }
 
     const observed: ObservedState = {
@@ -127,8 +143,19 @@ export class Observer {
     return { name, stack: Array.from(new Set(stack)), scripts, migrations };
   }
 
-  private observeTests(scripts: Record<string, string>): import('../types/state.js').TestsObservedState {
-    if (!scripts['test']) {
+  /**
+   * Observes the real test status.
+   *
+   * Previously this method reported `pass` whenever a `test` script merely
+   * existed, which silently invented the single most important observation in the
+   * framework. It now either executes the suite (producing an auditable evidence
+   * record) or reports `pending`, meaning "not measured" — never `pass`.
+   */
+  private observeTests(runId: string, options: ObserveOptions): import('../types/state.js').TestsObservedState {
+    const collector = new EvidenceCollector(this.projectRoot, this.configLoader);
+    const command = collector.detectTestCommand();
+
+    if (!command) {
       return {
         status: 'unavailable',
         passed: 0,
@@ -139,14 +166,36 @@ export class Observer {
       };
     }
 
+    const shouldRun = options.runTests ?? this.configLoader.loadEvidenceConfig().evidence.run_tests_on_observe;
+    if (!shouldRun) {
+      return {
+        status: 'pending',
+        passed: 0,
+        failed: 0,
+        skipped: 0,
+        duration_ms: 0,
+        failed_test_files: [],
+      };
+    }
+
+    const record: EvidenceRecord = collector.collect({ runId });
+    this.lastEvidence = record;
+
     return {
-      status: 'pass',
-      passed: 0,
-      failed: 0,
-      skipped: 0,
-      duration_ms: 0,
-      failed_test_files: [],
+      status: record.status === 'pass' ? 'pass' : record.status === 'unavailable' ? 'unavailable' : 'fail',
+      passed: record.passed,
+      failed: record.failed,
+      skipped: record.skipped,
+      duration_ms: record.duration_ms,
+      failed_test_files: record.failed_test_files,
+      evidence_id: record.id,
+      command: record.command,
     };
+  }
+
+  /** Evidence record produced by the last `observe({ runTests: true })`, if any. */
+  public getLastEvidence(): EvidenceRecord | undefined {
+    return this.lastEvidence;
   }
 
   private observeSpecs() {

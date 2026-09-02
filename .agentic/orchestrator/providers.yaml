@@ -5,6 +5,14 @@ providers:
     engine: gsd
     required: true
 
+  bmad:
+    engine: bmad-method
+    required: true
+
+  spec_kit:
+    engine: github-spec-kit
+    required: true
+
   specification:
     engine: tlc-spec-driven
     required: true
@@ -21,6 +29,10 @@ providers:
   verification:
     engine: tlc-spec-driven
     fresh_context: true
+    required: true
+
+  decision_ledger:
+    engine: native-adr
     required: true
 
   domain_skills:

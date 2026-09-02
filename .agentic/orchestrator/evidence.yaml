@@ -1,0 +1,22 @@
+version: 1
+
+# How executable evidence is produced. Nothing in the framework may claim a test
+# passed without an evidence record produced by running this command.
+evidence:
+  # Explicit test command. Leave empty to auto-detect
+  # (npm test / pytest / go test / cargo test / mvn test).
+  test_command: ""
+
+  # Hard timeout for a single evidence collection.
+  timeout_ms: 900000
+
+  # How much of the combined stdout+stderr is retained in the record.
+  # The full output is always hashed (SHA-256) so a trimmed tail cannot be forged.
+  output_tail_chars: 4000
+
+  # Refuse to collect evidence while the working tree is dirty.
+  require_clean_tree: false
+
+  # Whether `agentic observe` executes the suite. When false, the observed test
+  # status is reported as `pending` (not measured) instead of being assumed to pass.
+  run_tests_on_observe: false

@@ -1,0 +1,38 @@
+description = "Deliver a request through the governed Agentic SDLC cycle"
+
+prompt = """
+Deliver this request through the Agentic SDLC cycle: {{args}}
+
+Follow this protocol exactly.
+
+1. Structure and dispatch the work:
+   run_shell_command: agentic prompt "{{args}}"
+   - If the status is HUMAN_GATE: stop, explain which gate blocks it, and tell me to run
+     `agentic gate list`.
+   - If the status is AWAITING_AGENT: continue.
+
+2. Read the work orders: .agentic/execution/inbox/INDEX.md for the wave order, then each
+   .agentic/execution/inbox/<TASK-ID>.md (acceptance criteria, binding ADRs, ownership
+   boundaries, assumptions in force).
+
+3. Inspect the real code, tests and configuration involved before changing anything.
+   Contradicting evidence in the codebase overrides any assumption in the pack.
+
+4. Implement each task with SUPERPOWERS (strict TDD and systematic debugging):
+   - RED: write the failing test that encodes every AC-###.# in the pack, run the suite.
+   - GREEN: the minimum implementation that passes.
+   - REFACTOR: remove duplication, keep types strict.
+   Only touch paths listed as WRITE. One atomic commit per task.
+
+5. Report each task:
+   run_shell_command: agentic report <TASK-ID> --status completed --files "<changed>" --commit <sha>
+
+6. Close the cycle with real evidence:
+   run_shell_command: agentic verify
+
+7. Summarize: what changed, which ADRs applied, the evidence id and its counters, and
+   anything still open (assumptions, gates, blocked tasks).
+
+Never claim tests pass without the executed output, and never declare success on a
+BLOCKED, FAIL or REMEDIATING outcome.
+"""

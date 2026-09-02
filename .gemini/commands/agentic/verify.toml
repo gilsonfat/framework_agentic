@@ -1,0 +1,16 @@
+description = "Close the current cycle with real test evidence"
+
+prompt = """
+Close the current Agentic SDLC cycle.
+
+1. run_shell_command: agentic status
+2. Report any task you finished but did not report yet:
+   agentic report <TASK-ID> --status completed --commit <sha>
+3. run_shell_command: agentic verify
+
+Interpret the outcome honestly:
+- COMPLETE: requirements closed against evidence. Report the evidence id and counters.
+- FAIL or REMEDIATING: the suite or an acceptance criterion failed. Fix, then re-verify.
+- BLOCKED: closure was refused (no executable evidence, or missing acceptance criteria).
+  Say so plainly instead of implying success.
+"""

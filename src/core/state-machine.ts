@@ -14,6 +14,8 @@ export type TransitionOutcome =
   | 'needs_human'
   | 'no_work'
   | 'no_more_work'
+  | 'awaiting_agent'
+  | 'blocked_by_gate'
   | 'repeated_failure'
   | 'approved'
   | 'rejected'

@@ -27,6 +27,7 @@ states:
   SPECIFYING:
     success: SPEC_READY
     needs_human: HUMAN_GATE
+    blocked_by_gate: HUMAN_GATE
     failure: BLOCKED
 
   SPEC_READY:
@@ -43,8 +44,17 @@ states:
 
   EXECUTING:
     success: REVIEWING
+    awaiting_agent: AWAITING_AGENT
     partial_failure: REMEDIATING
     failure: BLOCKED
+
+  # Delegated execution: task prompt packs were handed to the coding agent and the
+  # run parks here until results are reported back (`agentic report`) and the cycle
+  # is closed with real evidence (`agentic verify`).
+  AWAITING_AGENT:
+    success: REVIEWING
+    failure: BLOCKED
+    needs_human: HUMAN_GATE
 
   REVIEWING:
     success: VERIFYING
@@ -54,6 +64,9 @@ states:
   VERIFYING:
     success: RECONCILING_IMPLEMENTATION
     failure: REMEDIATING
+    # BLOCKED verification (no executable evidence) is not a failure to remediate:
+    # it means closure was refused, so the run stops for a human.
+    needs_human: HUMAN_GATE
 
   REMEDIATING:
     success: VERIFYING

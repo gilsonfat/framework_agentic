@@ -9,6 +9,7 @@ export type OrchestratorState =
   | 'COMPILING'
   | 'EXECUTION_READY'
   | 'EXECUTING'
+  | 'AWAITING_AGENT'
   | 'REVIEWING'
   | 'VERIFYING'
   | 'REMEDIATING'
@@ -36,12 +37,19 @@ export interface ProjectObservedState {
 }
 
 export interface TestsObservedState {
+  /**
+   * `pending` means "not measured in this observation" — it must never be read
+   * as a pass. Only an executed evidence record produces `pass` or `fail`.
+   */
   status: 'pass' | 'fail' | 'unavailable' | 'pending';
   passed: number;
   failed: number;
   skipped: number;
   duration_ms: number;
   failed_test_files: string[];
+  /** Evidence record backing this observation, when the suite was executed. */
+  evidence_id?: string;
+  command?: string;
 }
 
 export interface RequirementObservedState {

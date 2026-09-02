@@ -1,9 +1,24 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 import { TaskCompiler } from '../src/core/task-compiler.js';
 import { TaskDAGNode } from '../src/types/task.js';
 
 describe('TaskCompiler', () => {
-  const compiler = new TaskCompiler();
+  let tempDir: string;
+  let compiler: TaskCompiler;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentic-dag-'));
+    compiler = new TaskCompiler(tempDir);
+  });
+
+  afterEach(() => {
+    if (fs.existsSync(tempDir)) {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 
   it('should compile linear dependent tasks into sequential DAG', () => {
     const nodes: TaskDAGNode[] = [

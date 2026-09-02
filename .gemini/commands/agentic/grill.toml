@@ -1,0 +1,13 @@
+description = "Probe a request for ambiguities and record the decisions"
+
+prompt = """
+Interrogate this request before any code is written: {{args}}
+
+1. run_shell_command: agentic grill "{{args}}"
+2. Every probe marked ASSUMED DEFAULT is an open question, not a decision. Put the real
+   choices to me with their trade-offs.
+3. Collect my answers into answers.json: { "GRILL-001": "...", "GRILL-003": "..." }
+4. Ratify them (this promotes the ADR from PROPOSED to ACCEPTED):
+   run_shell_command: agentic grill "{{args}}" --answers answers.json
+5. Only then deliver: agentic prompt "{{args}}" --answers answers.json
+"""

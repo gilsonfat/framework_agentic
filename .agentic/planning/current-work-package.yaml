@@ -1,15 +1,26 @@
-run_id: RUN-2026-08-28-9659
+run_id: RUN-2026-09-02-7274
 milestone: M01
-phase: P01
-goal: Initial Repository Bootstrap
+phase: P-611
+goal: Fluxo de checkout com cartão de crédito
 scope:
-  include: []
-  exclude: []
-requirements: []
+  include:
+    - "Core feature implementation matching the intent: Implementar fluxo de
+      checkout com cartão de crédito"
+    - Automated unit, contract, and integration test coverage (TDD)
+    - Strict error handling and input validation
+  exclude:
+    - Unrelated architectural refactoring outside the feature boundary
+    - Manual configuration steps not covered by automated tests
+    - Deprecated patterns or unverified third-party libraries
+requirements:
+  - REQ-611
 dependencies: []
-risks: []
+risks:
+  - Unchecked boundary inputs causing runtime crashes
+  - State drift between declared spec and real codebase
+  - Unhandled asynchronous rejections or timeout cascades
 blockers: []
-complexity: S
+complexity: M
 expected_domains:
-  - orchestrator
+  - billing
 human_gate_required: false

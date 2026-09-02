@@ -1,15 +1,19 @@
 {
   "id": "TASK-001",
-  "title": "Execute work package for P01",
-  "role": "orchestrator-engineer",
-  "objective": "Implement Execute work package for P01",
-  "domain": "orchestrator",
-  "requirements": [],
-  "acceptance_criteria": [],
+  "title": "Implement specification for REQ-611",
+  "role": "billing-engineer",
+  "objective": "Implement Implement specification for REQ-611",
+  "domain": "billing",
+  "requirements": [
+    "REQ-611"
+  ],
+  "acceptance_criteria": [
+    "AC-611.1"
+  ],
   "dependencies": [],
   "ownership": {
     "write": [
-      "src/**"
+      "src/modules/req-611/**"
     ]
   },
   "process": {

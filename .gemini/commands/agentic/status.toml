@@ -1,0 +1,9 @@
+description = "Show where the delivery cycle currently stands"
+
+prompt = """
+run_shell_command: agentic status
+
+Report the state, the requirement and task counters, the evidence line, pending gates,
+active team claims and the printed next action. A test status of "not measured" is
+unknown - never report it as green.
+"""

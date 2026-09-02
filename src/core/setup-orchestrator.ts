@@ -7,6 +7,9 @@ import { ProviderInstaller } from './provider-installer.js';
 import { Observer } from './observer.js';
 import { Reconciler } from './reconciler.js';
 import { Doctor, DoctorReport } from './doctor.js';
+import { TeamCoordinator } from './team.js';
+import { AgentIntegrations, ALL_PRODUCT_IDS } from './agent-integrations.js';
+import { AgentProductId, IntegrationResult } from '../types/integrations.js';
 
 export interface SetupOptions {
   targetDir?: string;
@@ -16,9 +19,16 @@ export interface SetupOptions {
   enableGsd?: boolean;
   enableTlc?: boolean;
   enableRuflo?: boolean;
+  /** Write the instruction files at all. */
   enableRules?: boolean;
-  enableClaudeCommands?: boolean;
-  enableAntigravitySkill?: boolean;
+  /** Which AI products to wire. Defaults to all of them. */
+  products?: AgentProductId[];
+  /** Pre-approve `agentic` commands in .claude/settings.json. */
+  enablePermissions?: boolean;
+  /** Add the Claude Code SessionStart hook that surfaces the cycle state. */
+  enableHooks?: boolean;
+  /** Skip the closing "what to do next" block. */
+  quiet?: boolean;
 }
 
 export interface SetupResult {
@@ -26,7 +36,10 @@ export interface SetupResult {
   gitInitialized: boolean;
   scaffoldSuccess: boolean;
   processEngine: string;
+  /** Flat list of every instruction file written, for backwards compatibility. */
   rulesConfigured: string[];
+  /** Per-product integration detail. */
+  integrations: IntegrationResult[];
   providersInstalled: string[];
   doctorReport: DoctorReport;
 }
@@ -45,13 +58,13 @@ export class SetupOrchestrator {
     const enableTlc = options.enableTlc !== false;
     const enableRuflo = options.enableRuflo !== false;
     const enableRules = options.enableRules !== false;
-    const enableClaudeCommands = options.enableClaudeCommands !== false;
-    const enableAntigravitySkill = options.enableAntigravitySkill !== false;
+    const products = options.products && options.products.length > 0 ? options.products : ALL_PRODUCT_IDS;
 
     console.log(`\n=============================================================`);
     console.log(`   Agentic SDLC Setup Orchestrator: ${target}`);
     console.log(`   Selected Process Engine: ${processEngine.toUpperCase()}`);
     console.log(`   Modules: GSD [${enableGsd ? 'ON' : 'OFF'}], TLC [${enableTlc ? 'ON' : 'OFF'}], Ruflo [${enableRuflo ? 'ON' : 'OFF'}]`);
+    console.log(`   AI products: ${enableRules ? products.join(', ') : 'none (--without-rules)'}`);
     console.log(`=============================================================\n`);
 
     // 1. Initialize Git repository if not present
@@ -87,14 +100,20 @@ export class SetupOrchestrator {
       processEngine,
     });
 
-    // 4. Configure Workspace AI Instruction Rules & Slash Commands
-    console.log('>>> Configuring Auto-Orchestration Workspace Rules & Slash Commands...');
-    const rulesConfigured = this.configureWorkspaceAgentRules(target, {
-      processEngine,
-      enableRules,
-      enableClaudeCommands,
-      enableAntigravitySkill,
-    });
+    // 4. Wire every AI product to the same workflow.
+    console.log('>>> Wiring AI products to the Agentic workflow...');
+    const integrations = enableRules
+      ? this.configureAgentProducts(target, {
+          processEngine,
+          products,
+          force: options.force,
+          permissions: options.enablePermissions,
+          hooks: options.enableHooks,
+        })
+      : [];
+    const rulesConfigured = integrations.flatMap((i) =>
+      i.files.filter((f) => f.action !== 'preserved').map((f) => f.path)
+    );
 
     // 5. Install / Check Provider Engines (GSD, TLC, Ruflo, Superpowers, ECC)
     const providersInstalled: string[] = [];
@@ -122,6 +141,12 @@ export class SetupOrchestrator {
       }
     }
 
+    // 5b. Declare the shared/local artifact split so teammates do not conflict.
+    const collaboration = new TeamCoordinator(target).ensureCollaborationPolicy({ force: options.force });
+    if (collaboration.written.length > 0) {
+      console.log(`+ Collaboration policy: ${collaboration.written.join(', ')}`);
+    }
+
     // 6. Initial Repository Observation and Reconciliation
     console.log('>>> Running baseline repository observation and reconciliation...');
     const observer = new Observer(target);
@@ -137,15 +162,61 @@ export class SetupOrchestrator {
     const doctorReport = doctor.runDiagnostics();
     console.log(doctor.formatReport(doctorReport));
 
+    if (!options.quiet) {
+      this.printNextSteps(integrations, doctorReport);
+    }
+
     return {
       targetDir: target,
       gitInitialized,
       scaffoldSuccess: true,
       processEngine,
       rulesConfigured,
+      integrations,
       providersInstalled,
       doctorReport,
     };
+  }
+
+  /**
+   * Closing summary. Setup is where most people give up, so the last thing they
+   * read is how to actually start working in their own tool.
+   */
+  private printNextSteps(integrations: IntegrationResult[], doctorReport: DoctorReport): void {
+    console.log('\n=============================================================');
+    console.log('   READY TO USE');
+    console.log('=============================================================\n');
+
+    if (integrations.length > 0) {
+      const detected = integrations.filter((i) => i.detected);
+      const rest = integrations.filter((i) => !i.detected);
+
+      if (detected.length > 0) {
+        console.log('Detected on this machine:');
+        for (const integration of detected) {
+          console.log(`  ${integration.label.padEnd(24)} ${integration.entryPoint}`);
+        }
+      }
+      if (rest.length > 0) {
+        console.log(`${detected.length > 0 ? '\n' : ''}Also wired (ready if a teammate uses it):`);
+        for (const integration of rest) {
+          console.log(`  ${integration.label.padEnd(24)} ${integration.entryPoint}`);
+        }
+      }
+      console.log('');
+    }
+
+    console.log('First delivery, in three commands:');
+    console.log('  1. agentic prompt "<what you want built>"');
+    console.log('  2. implement the packs in .agentic/execution/inbox/, then:');
+    console.log('     agentic report <TASK-ID> --status completed --commit <sha>');
+    console.log('  3. agentic verify\n');
+    console.log('Orientation:  agentic status | agentic doctor | agentic skills | agentic team who');
+
+    if (!doctorReport.ready) {
+      console.log('\n! Doctor reported blocking issues above: fix them before closing work.');
+    }
+    console.log('');
   }
 
   private customizeProvidersConfig(
@@ -164,6 +235,16 @@ export class SetupOrchestrator {
         required: true,
       };
 
+      parsed.providers.bmad = {
+        engine: 'bmad-method',
+        required: true,
+      };
+
+      parsed.providers.spec_kit = {
+        engine: 'github-spec-kit',
+        required: true,
+      };
+
       parsed.providers.specification = {
         engine: cfg.enableTlc ? 'tlc-spec-driven' : 'native-spec',
         required: true,
@@ -173,11 +254,21 @@ export class SetupOrchestrator {
         engine: cfg.enableRuflo ? 'ruflo' : 'native-swarm',
         required: false,
         fallback: 'native-agent',
+        // Delegated: the orchestrator hands prompt packs to the coding agent and
+        // waits for reported results. Switch to `command` with a `command:`
+        // template to drive an agent CLI directly.
+        mode: 'delegated',
       };
 
       parsed.providers.process = {
         engine: cfg.processEngine,
         required: true,
+      };
+
+      parsed.providers.domain_skills = {
+        engine: 'mattpocock-skills',
+        auto_select: true,
+        required: false,
       };
 
       parsed.providers.verification = {
@@ -187,123 +278,41 @@ export class SetupOrchestrator {
       };
 
       fs.writeFileSync(providersPath, YAML.stringify(parsed), 'utf8');
-      console.log(`+ Configured providers.yaml (Process: ${cfg.processEngine}, Planner: ${cfg.enableGsd ? 'gsd' : 'native'})`);
+      console.log(`+ Configured providers.yaml (Process: ${cfg.processEngine}, Planner: ${cfg.enableGsd ? 'gsd' : 'native'}, BMAD: bmad-method, SpecKit: github-spec-kit)`);
     } catch (e) {
       console.warn('! Note: Could not update providers.yaml:', (e as Error).message);
     }
   }
 
-  private configureWorkspaceAgentRules(
+  private configureAgentProducts(
     targetDir: string,
-    opts: { processEngine: string; enableRules: boolean; enableClaudeCommands: boolean; enableAntigravitySkill: boolean }
-  ): string[] {
-    const processLabel = opts.processEngine === 'ecc'
-      ? 'ECC (tdd-workflow, verification-loop, security-review)'
-      : opts.processEngine === 'superpowers'
-      ? 'SUPERPOWERS (strict TDD and systematic debugging)'
-      : 'NATIVE TDD (Red-Green-Refactor)';
+    opts: {
+      processEngine: string;
+      products: AgentProductId[];
+      force?: boolean;
+      permissions?: boolean;
+      hooks?: boolean;
+    }
+  ): IntegrationResult[] {
+    const integrations = new AgentIntegrations(targetDir).install({
+      processEngine: opts.processEngine,
+      products: opts.products,
+      force: opts.force,
+      permissions: opts.permissions,
+      hooks: opts.hooks,
+    });
 
-    const rulesContent = `# AGENTIC SDLC ORCHESTRATOR — WORKSPACE INSTRUCTIONS
-
-> **MANDATORY INSTRUCTION FOR ALL AI ASSISTANTS & CODING AGENTS (Antigravity, Gemini, Claude Code, Codex, etc.)**:
-> This repository is governed by the **Agentic SDLC Orchestrator**. 
-> Whenever the user requests any task, feature, bugfix, or refactoring in this repository, you **MUST ALWAYS** execute it through the orchestrated Agentic SDLC cycle.
-
----
-
-## The Non-Negotiable 12-Step Cycle
-
-Every prompt or modification must follow this pipeline:
-
-1. **OBSERVE**: Inspect real repository state (Git branch, status, tests, migrations, schemas).
-2. **RECONCILE**: Compare declared state vs observed state (**Observed State > Declared State**).
-3. **PLAN (GSD)**: Frame the work into a bounded milestone, phase, and work package.
-4. **SPECIFY (TLC)**: Write formal specification contracts with stable IDs (\`REQ-###\`, \`AC-###.#\`).
-5. **COMPILE DAG**: Build dependency graph, check for cycles (Kahn's algorithm) and write conflicts.
-6. **ORCHESTRATE (RUFLO)**: Select execution strategy based on complexity (XS/S: Single agent; M: Parallel; L/XL: Swarm).
-7. **IMPLEMENT (${processLabel})**: Apply strict **TDD** (RED -> GREEN -> REFACTOR) and **Systematic Debugging**. Never edit forbidden files.
-8. **REVIEW**: Execute 4-layer review (L1 Worker, L2 Integration build/test, L3 Independent correctness, L4 Security Read-Only).
-9. **VERIFY (TLC FRESH VERIFIER)**: Independent verification. **No requirement is DONE without executable evidence** (\`implemented && tested && verified\`).
-10. **REMEDIATE**: If verification fails, generate a \`RemediationPackage\` and repeat (up to 3 attempts before escalating to Human Gate).
-11. **AS-BUILT SPEC**: Extract verified as-built documentation from real Git diff and test evidence.
-12. **UPDATE STATE**: Update requirement matrix and declared roadmap, then re-observe.
-
----
-
-## Command Quick Reference
-
-- \`agentic status\` : View the current milestone, phase, requirements, and test status.
-- \`agentic doctor\` : Verify framework health and readiness.
-- \`agentic prompt "<instruction>"\` (alias \`agentic do "<instruction>"\`) : Auto-orchestrate any prompt instruction through the 12-step cycle.
-- \`agentic run [--phase <id>]\` : Run the cyclic delivery loop.
-- \`agentic resume\` : Resume interrupted executions from checkpoint safely.
-`;
-
-    const writtenFiles: string[] = [];
-
-    if (opts.enableRules) {
-      for (const fileName of ['AGENTS.md', 'GEMINI.md', 'CLAUDE.md', 'CODEX.md']) {
-        const filePath = path.join(targetDir, fileName);
-        fs.writeFileSync(filePath, rulesContent, 'utf8');
-        writtenFiles.push(fileName);
-      }
+    for (const integration of integrations) {
+      const changed = integration.files.filter((f) => f.action !== 'preserved');
+      const preserved = integration.files.filter((f) => f.action === 'preserved');
+      console.log(
+        `+ ${integration.label.padEnd(22)} ${changed.length} file(s) written${
+          preserved.length > 0 ? `, ${preserved.length} preserved` : ''
+        }`
+      );
     }
 
-    if (opts.enableAntigravitySkill) {
-      const antigravitySkillDir = path.join(targetDir, '.agents', 'skills', 'agentic');
-      fs.mkdirSync(antigravitySkillDir, { recursive: true });
-      const skillContent = `---
-name: agentic
-description: Agentic SDLC Orchestrator. Execute any task, feature, bugfix, or refactoring through the orchestrated 12-step SDLC cycle.
----
-
-# Agentic SDLC Orchestrator Skill
-
-When invoked (via /agentic or on any engineering prompt), follow the 12-step cycle:
-1. Observe repository state
-2. Reconcile observed state vs declared state
-3. Plan milestone/phase work package (GSD)
-4. Specify contracts with stable IDs REQ-### and AC-###.# (TLC)
-5. Compile DAG (Kahn's algorithm, cycle and conflict check)
-6. Orchestrate execution strategy (Ruflo)
-7. Implement with ${processLabel}
-8. 4-Layer Review (L1-L4)
-9. Fresh Context Verification (TLC)
-10. Remediation loop on failure
-11. As-Built specification extraction
-12. Update declared state & matrix
-`;
-      fs.writeFileSync(path.join(antigravitySkillDir, 'SKILL.md'), skillContent, 'utf8');
-      writtenFiles.push('.agents/skills/agentic/SKILL.md');
-    }
-
-    if (opts.enableClaudeCommands) {
-      const claudeCommandsDir = path.join(targetDir, '.claude', 'commands');
-      fs.mkdirSync(claudeCommandsDir, { recursive: true });
-
-      fs.writeFileSync(
-        path.join(claudeCommandsDir, 'agentic.md'),
-        '# /agentic Slash Command\n\nExecute complete Agentic SDLC cycle:\n\n```bash\nagentic prompt "$*"\n```\n',
-        'utf8'
-      );
-      fs.writeFileSync(
-        path.join(claudeCommandsDir, 'agentic-run.md'),
-        '# /agentic-run Slash Command\n\nRun cyclic delivery loop:\n\n```bash\nagentic run "$@"\n```\n',
-        'utf8'
-      );
-      fs.writeFileSync(
-        path.join(claudeCommandsDir, 'agentic-doctor.md'),
-        '# /agentic-doctor Slash Command\n\nRun diagnostics:\n\n```bash\nagentic doctor\n```\n',
-        'utf8'
-      );
-      fs.writeFileSync(
-        path.join(claudeCommandsDir, 'agentic-status.md'),
-        '# /agentic-status Slash Command\n\nDisplay status dashboard:\n\n```bash\nagentic status\n```\n',
-        'utf8'
-      );
-      writtenFiles.push('.claude/commands/agentic.md');
-    }
-
-    return writtenFiles;
+    return integrations;
   }
 }
+

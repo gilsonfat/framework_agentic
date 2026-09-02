@@ -10,19 +10,64 @@ import { TaskCompiler } from './task-compiler.js';
 import { ComplexityEngine } from './complexity-engine.js';
 import { RoutingEngine } from './routing-engine.js';
 import { Executor } from './executor.js';
-import { ReviewPipeline } from './review-pipeline.js';
+import { ReviewPipeline, ReviewFinding } from './review-pipeline.js';
 import { Verifier } from './verifier.js';
 import { RemediationEngine } from './remediation.js';
 import { AsBuiltGenerator } from './as-built.js';
+import { EvidenceCollector } from './evidence-collector.js';
+import { GateKeeper } from './gate-keeper.js';
+import { AgentBridge } from './agent-bridge.js';
+import { TeamCoordinator } from './team.js';
+import { IdRegistry } from './id-registry.js';
 import { RunDescriptor } from '../types/run.js';
-import { WorkPackage, TaskDAGNode } from '../types/task.js';
+import { WorkPackage, TaskContract, TaskDAGNode } from '../types/task.js';
+import { BmadBriefing } from '../types/bmad.js';
+import { GrillMeResult, DecisionRecord } from '../types/decision.js';
+import { GitHubSpecKitDocument } from '../types/spec-kit.js';
+import { ExecutionMode } from '../types/execution.js';
+import { EvidenceRecord } from '../types/evidence.js';
 
 export interface OrchestrationOptions {
   phaseId?: string;
-  maxCycles?: number;
+  runId?: string;
   autoApproveNonDestructiveGates?: boolean;
+  bmadBriefing?: BmadBriefing;
+  grillResult?: GrillMeResult;
+  decisionRecords?: DecisionRecord[];
+  specKitDoc?: GitHubSpecKitDocument;
+  specFile?: string;
+  /** Execute the test suite during OBSERVE as well as during VERIFY. */
+  observeTests?: boolean;
+  /** Prepare artifacts without executing tests or closing anything. */
+  dryRun?: boolean;
+  /** Override providers.yaml execution.mode. */
+  executionMode?: ExecutionMode;
+  /** Take over a phase lease held by someone else. */
+  force?: boolean;
+  /** Resume an existing run parked in AWAITING_AGENT instead of starting a new one. */
+  resume?: boolean;
 }
 
+/** Paths no task may ever write, regardless of its declared ownership. */
+const GLOBAL_FORBIDDEN_PATHS = [
+  '.env',
+  '.env.*',
+  '**/secrets/**',
+  '**/*.pem',
+  '**/id_rsa*',
+  '.agentic/audit/**',
+  '.agentic/verification/requirement-matrix.json',
+  '.agentic/gates/**',
+];
+
+/**
+ * The 12-step delivery cycle.
+ *
+ * Design rule: this class coordinates and enforces, it never *performs* the work
+ * and never invents an observation. Implementation is handed to an agent through
+ * `AgentBridge`, test results come only from `EvidenceCollector`, closure only
+ * from `Verifier`, and every gate decision is a persisted human decision.
+ */
 export class Orchestrator {
   private projectRoot: string;
   private configLoader: ConfigLoader;
@@ -38,197 +83,511 @@ export class Orchestrator {
   private verifier: Verifier;
   private remediationEngine: RemediationEngine;
   private asBuiltGenerator: AsBuiltGenerator;
+  private evidenceCollector: EvidenceCollector;
+  private gateKeeper: GateKeeper;
+  private agentBridge: AgentBridge;
+  private team: TeamCoordinator;
+  private idRegistry: IdRegistry;
 
   constructor(projectRoot: string = process.cwd()) {
     this.projectRoot = path.resolve(projectRoot);
     this.configLoader = new ConfigLoader(this.projectRoot);
     this.auditLogger = new AuditLogger(this.projectRoot);
     this.observer = new Observer(this.projectRoot, this.configLoader);
-    this.reconciler = new Reconciler(this.projectRoot);
+    this.reconciler = new Reconciler(this.projectRoot, this.auditLogger);
     this.planner = new Planner(this.projectRoot, this.configLoader);
     this.taskCompiler = new TaskCompiler(this.projectRoot);
     this.complexityEngine = new ComplexityEngine(this.configLoader);
     this.routingEngine = new RoutingEngine(this.configLoader);
     this.executor = new Executor(this.projectRoot, this.auditLogger);
     this.reviewPipeline = new ReviewPipeline();
-    this.verifier = new Verifier(this.projectRoot, this.auditLogger);
+    this.verifier = new Verifier(this.projectRoot, this.auditLogger, this.configLoader);
     this.remediationEngine = new RemediationEngine(this.projectRoot, this.configLoader, this.auditLogger);
     this.asBuiltGenerator = new AsBuiltGenerator(this.projectRoot, this.auditLogger);
+    this.evidenceCollector = new EvidenceCollector(this.projectRoot, this.configLoader, this.auditLogger);
+    this.gateKeeper = new GateKeeper(this.projectRoot, this.configLoader, this.auditLogger);
+    this.agentBridge = new AgentBridge(this.projectRoot, this.configLoader, this.auditLogger);
+    this.team = new TeamCoordinator(this.projectRoot, this.auditLogger);
+    this.idRegistry = new IdRegistry(this.projectRoot, this.auditLogger);
   }
 
   public generateRunId(): string {
-    const now = new Date();
-    const dateStr = now.toISOString().slice(0, 10);
-    const timeStr = String(Math.floor(Math.random() * 9000) + 1000);
-    return `RUN-${dateStr}-${timeStr}`;
+    return this.idRegistry.generateRunId();
+  }
+
+  public loadCurrentRun(): RunDescriptor | undefined {
+    const file = path.join(this.projectRoot, '.agentic', 'execution', 'current-run.json');
+    if (!fs.existsSync(file)) return undefined;
+    try {
+      return JSON.parse(fs.readFileSync(file, 'utf8')) as RunDescriptor;
+    } catch {
+      return undefined;
+    }
   }
 
   public async runCycle(options: OrchestrationOptions = {}): Promise<RunDescriptor> {
-    const runId = this.generateRunId();
-    this.auditLogger.emit(runId, 'RUN_STARTED');
+    const parked = this.loadCurrentRun();
+    if ((options.resume ?? true) && parked?.status === 'AWAITING_AGENT' && !options.runId) {
+      return this.closeCycle(parked, options);
+    }
+
+    const runId = options.runId || this.generateRunId();
+    this.auditLogger.emit(runId, 'RUN_STARTED', {
+      metadata: { actor: this.team.identity().email, phase: options.phaseId, dry_run: Boolean(options.dryRun) },
+    });
 
     const sm = new StateMachine(runId, 'IDLE', this.configLoader, this.auditLogger);
 
-    // 1. OBSERVE
-    sm.transition('next'); // -> OBSERVING
-    const observedBefore = this.observer.observe(runId);
+    // ---- 1. OBSERVE -------------------------------------------------------
+    sm.transition('next');
+    const observedBefore = this.observer.observe(runId, { runTests: options.observeTests });
+    const observeEvidence = this.observer.getLastEvidence();
 
-    // 2. RECONCILE
-    sm.transition('success'); // -> RECONCILING
+    // ---- 2. RECONCILE -----------------------------------------------------
+    sm.transition('success');
     const reconciled = this.reconciler.reconcile(runId, observedBefore);
-
-    // Check if state repair is required
     if (reconciled.status === 'MISMATCH') {
-      sm.transition('needs_state_repair'); // -> STATE_REPAIR
-      // Auto-repair declared state to match observed truth
-      sm.transition('success'); // -> PLANNING
+      sm.transition('needs_state_repair');
+      this.reconciler.syncDeclaredState(runId, observedBefore);
+      sm.transition('success');
     } else {
-      sm.transition('success'); // -> PLANNING
+      sm.transition('success');
     }
 
-    // 3. PLAN
+    // ---- 3. PLAN ----------------------------------------------------------
     const workPackage = this.planner.getCurrentWorkPackage();
     workPackage.run_id = runId;
-    if (options.phaseId) {
-      workPackage.phase = options.phaseId;
+    if (options.phaseId) workPackage.phase = options.phaseId;
+
+    const leaseCheck = this.team.check(workPackage.phase);
+    if (!leaseCheck.available && !options.force) {
+      this.auditLogger.emit(runId, 'RUN_BLOCKED', { metadata: { reason: leaseCheck.reason } });
+      const blocked = this.buildDescriptor({
+        runId,
+        status: 'BLOCKED',
+        observedBefore,
+        workPackage,
+        options,
+        blockers: [leaseCheck.reason],
+      });
+      this.saveCurrentRun(blocked);
+      return blocked;
     }
+    this.team.claim(workPackage.phase, { runId, force: options.force });
+
     this.planner.saveWorkPackage(workPackage);
     this.auditLogger.emit(runId, 'WORK_PACKAGE_CREATED', {
-      metadata: { milestone: workPackage.milestone, phase: workPackage.phase },
+      metadata: { milestone: workPackage.milestone, phase: workPackage.phase, complexity: workPackage.complexity },
     });
 
-    // 4. SPECIFY
-    sm.transition('success'); // -> SPECIFYING
+    // ---- 4. SPECIFY + HUMAN GATES ----------------------------------------
+    sm.transition('success');
+    const taskNodes = this.deriveTaskNodes(workPackage, options.specKitDoc);
+    const plannedWrites = taskNodes.flatMap((n) => n.ownership.write);
+
+    const gateEvaluation = this.gateKeeper.evaluate({
+      runId,
+      workPackage,
+      observed: observedBefore,
+      plannedWrites,
+      repeatedRemediationFailure: workPackage.requirements.some((r) => this.remediationEngine.isExhausted(r)),
+    });
+
+    if (gateEvaluation.blocked) {
+      sm.transition('blocked_by_gate');
+      this.auditLogger.emit(runId, 'RUN_BLOCKED', {
+        metadata: {
+          reason: 'human gate pending',
+          gates: gateEvaluation.triggered.map((g) => `${g.id} (${g.status})`),
+        },
+      });
+      const blocked = this.buildDescriptor({
+        runId,
+        status: sm.getState(),
+        observedBefore,
+        workPackage,
+        options,
+        blockers: gateEvaluation.triggered.map((g) => `${g.gate}: ${g.reason} [${g.id}] -> agentic gate approve ${g.id}`),
+      });
+      this.saveCurrentRun(blocked);
+      return blocked;
+    }
+
     this.auditLogger.emit(runId, 'SPEC_READY');
-    sm.transition('success'); // -> SPEC_READY
-    sm.transition('next'); // -> COMPILING
+    sm.transition('success');
+    sm.transition('next');
 
-    // 5. COMPILE TASK DAG
-    const taskNodes: TaskDAGNode[] = workPackage.requirements.map((req, idx) => ({
-      id: `TASK-${String(idx + 1).padStart(3, '0')}`,
-      title: `Implement specification for ${req}`,
-      domain: workPackage.expected_domains[0] || 'backend',
-      requirements: [req],
-      acceptance_criteria: [`AC-${req.replace('REQ-', '')}.1`],
-      dependencies: idx > 0 ? [`TASK-${String(idx).padStart(3, '0')}`] : [],
-      ownership: {
-        write: [`src/modules/${req.toLowerCase()}/**`],
-      },
-    }));
+    // ---- 5. COMPILE DAG ---------------------------------------------------
+    const dag = this.taskCompiler.compile(taskNodes);
+    if (dag.conflicts.length > 0) {
+      this.auditLogger.emit(runId, 'REVIEW_FINDING', {
+        metadata: {
+          layer: 'L0',
+          category: 'write-conflict',
+          conflicts: dag.conflicts,
+        },
+      });
+    }
+    sm.transition('success');
 
-    // If no explicit tasks generated from requirements, create baseline task
-    if (taskNodes.length === 0) {
-      taskNodes.push({
+    // ---- 6. COMPLEXITY + ROUTING -----------------------------------------
+    const complexity = this.complexityEngine.assess({
+      estimatedFiles: taskNodes.length * 2,
+      domainsCount: workPackage.expected_domains.length,
+      hasDatabaseMigration: observedBefore.project.migrations.length > 0,
+      hasSecurityImpact: workPackage.expected_domains.includes('security'),
+    });
+    const executionProvider = this.routingEngine.resolveExecutionProvider();
+    const verificationProvider = this.routingEngine.resolveVerificationProvider();
+
+    // ---- 7. EXECUTE (delegated to the coding agent) -----------------------
+    sm.transition('next');
+    const contracts: TaskContract[] = dag.nodes.map((node) => this.executor.createTaskContract(node));
+    this.agentBridge.resetInbox();
+    const dispatch = this.agentBridge.dispatch({
+      runId,
+      dag,
+      contracts,
+      goal: workPackage.goal,
+      specFile: options.specFile,
+      decisionRefs: (options.decisionRecords || []).map((d) => d.id),
+      openQuestions: options.grillResult?.unresolved_items,
+      assumptions: options.grillResult?.probes
+        .filter((p) => p.assumed)
+        .map((p) => `${p.question} -> ${p.resolved_answer}`),
+      mode: options.executionMode,
+    });
+
+    if (dispatch.awaiting.length > 0) {
+      sm.transition('awaiting_agent');
+      const awaiting = this.buildDescriptor({
+        runId,
+        status: sm.getState(),
+        observedBefore,
+        workPackage,
+        options,
+        dag,
+        contracts,
+        complexity,
+        executionProvider,
+        verificationProvider,
+        dispatch,
+        blockers: [
+          `${dispatch.awaiting.length} task(s) awaiting implementation. Prompt packs: ${dispatch.index_file}`,
+          `Report each with: agentic report <TASK-ID> --status completed`,
+          `Then close the cycle with: agentic verify`,
+        ],
+        evidence: observeEvidence,
+      });
+      this.saveCurrentRun(awaiting);
+      return awaiting;
+    }
+
+    const partial = this.buildDescriptor({
+      runId,
+      status: sm.getState(),
+      observedBefore,
+      workPackage,
+      options,
+      dag,
+      contracts,
+      complexity,
+      executionProvider,
+      verificationProvider,
+      dispatch,
+      evidence: observeEvidence,
+    });
+    this.saveCurrentRun(partial);
+
+    return this.closeCycle(partial, options, sm);
+  }
+
+  /**
+   * Steps 8-12: review, verify against executed evidence, as-built, state update.
+   * Callable on its own (`agentic verify`) once an agent has reported its tasks.
+   */
+  public async closeCycle(
+    run: RunDescriptor,
+    options: OrchestrationOptions = {},
+    existingStateMachine?: StateMachine
+  ): Promise<RunDescriptor> {
+    const runId = run.run_id;
+    const sm =
+      existingStateMachine ||
+      new StateMachine(runId, 'AWAITING_AGENT', this.configLoader, this.auditLogger);
+
+    const taskIds = (run.dag?.nodes || []).map((n) => n.id);
+    const results = this.agentBridge.collectResults(runId, taskIds);
+    const missing = taskIds.filter((id) => !results.some((r) => r.task_id === id && r.status !== 'pending'));
+    const failedTasks = results.filter((r) => r.status === 'failed' || r.status === 'blocked');
+
+    if (missing.length > 0) {
+      this.auditLogger.emit(runId, 'RUN_BLOCKED', {
+        metadata: { reason: 'tasks not reported', missing },
+      });
+      const stillAwaiting: RunDescriptor = {
+        ...run,
+        status: 'AWAITING_AGENT',
+        blockers: [
+          `Cannot verify: ${missing.length} task(s) have no reported result (${missing.join(', ')}).`,
+          `Report them with: agentic report <TASK-ID> --status completed|blocked`,
+        ],
+      };
+      this.saveCurrentRun(stillAwaiting);
+      return stillAwaiting;
+    }
+
+    // ---- 8. REVIEW --------------------------------------------------------
+    if (sm.getState() === 'AWAITING_AGENT' || sm.getState() === 'EXECUTING') {
+      sm.transition('success');
+    }
+    const filesChanged = Array.from(new Set(results.flatMap((r) => r.files_changed)));
+    const findings: ReviewFinding[] = this.reviewPipeline.runSecurityChecks(filesChanged);
+    for (const failed of failedTasks) {
+      findings.push({
+        layer: 'L1',
+        category: 'task-report',
+        severity: 'MAJOR',
+        description: `Task ${failed.task_id} reported ${failed.status}: ${failed.error || failed.notes?.join('; ') || 'no detail'}`,
+      });
+    }
+    const reviewReport = this.reviewPipeline.evaluateReview(runId, findings);
+    for (const finding of findings) {
+      this.auditLogger.emit(runId, 'REVIEW_FINDING', {
+        metadata: { layer: finding.layer, category: finding.category, severity: finding.severity, description: finding.description },
+      });
+    }
+
+    if (reviewReport.status === 'CRITICAL') {
+      sm.transition('critical');
+      const blocked: RunDescriptor = {
+        ...run,
+        status: sm.getState(),
+        review: reviewReport as unknown as Record<string, unknown>,
+        blockers: findings.filter((f) => f.severity === 'CRITICAL').map((f) => f.description),
+      };
+      this.saveCurrentRun(blocked);
+      return blocked;
+    }
+
+    // ---- 9. VERIFY (executed evidence only) -------------------------------
+    sm.transition('success');
+    const evidence: EvidenceRecord = this.evidenceCollector.collect({
+      runId,
+      dryRun: options.dryRun,
+    });
+
+    const requirementInputs = (run.dag?.nodes || []).map((node) => {
+      const result = results.find((r) => r.task_id === node.id);
+      return {
+        id: node.requirements[0] || node.id,
+        tasks: [node.id],
+        acceptanceCriteria: node.acceptance_criteria,
+        files: result?.files_changed,
+        commit: result?.commit,
+        authoredBy: result?.reported_by,
+      };
+    });
+
+    const verification = this.verifier.verify({
+      runId,
+      requirements: requirementInputs,
+      evidence,
+      verifierType: 'fresh_context',
+    });
+
+    if (verification.status === 'FAIL') {
+      sm.transition('failure');
+      const { packages, escalateToHumanGate } = this.remediationEngine.createRemediationPackages(
+        verification,
+        Object.fromEntries(requirementInputs.map((r) => [r.id, r.tasks]))
+      );
+
+      if (escalateToHumanGate) {
+        this.gateKeeper.open({
+          runId,
+          gate: 'repeated_remediation_failure',
+          reason: 'Automatic remediation attempts exhausted; human decision required.',
+          context: { phase: run.work_package.phase, requirements: requirementInputs.map((r) => r.id) },
+        });
+        sm.transition('repeated_failure');
+      }
+
+      const failedRun: RunDescriptor = {
+        ...run,
+        status: sm.getState(),
+        review: reviewReport as unknown as Record<string, unknown>,
+        verification,
+        remediations: packages,
+        evidence,
+        blockers: verification.blocking_findings,
+      };
+      this.saveCurrentRun(failedRun);
+      this.auditLogger.emit(runId, 'RUN_BLOCKED', { metadata: { reason: 'verification failed' } });
+      return failedRun;
+    }
+
+    if (verification.status !== 'PASS') {
+      // BLOCKED or PARTIAL: closure refused. Not a failure to remediate — a human must look.
+      sm.transition('needs_human');
+      const blockedRun: RunDescriptor = {
+        ...run,
+        status: sm.getState(),
+        review: reviewReport as unknown as Record<string, unknown>,
+        verification,
+        evidence,
+        blockers: verification.blocking_findings || ['Verification produced no closable evidence.'],
+      };
+      this.saveCurrentRun(blockedRun);
+      this.auditLogger.emit(runId, 'RUN_BLOCKED', {
+        metadata: { reason: `verification ${verification.status}`, findings: verification.blocking_findings },
+      });
+      return blockedRun;
+    }
+
+    this.remediationEngine.resetAttempts(requirementInputs.map((r) => r.id));
+
+    // ---- 10. RECONCILE IMPLEMENTATION + AS-BUILT --------------------------
+    sm.transition('success');
+    sm.transition('success');
+    const asBuiltPath = this.asBuiltGenerator.generate({
+      runId,
+      milestone: run.work_package.milestone,
+      phase: run.work_package.phase,
+      baselineCommit: run.baseline_commit,
+      resultCommit: evidence.commit,
+      verificationReport: verification,
+      workPackage: run.work_package,
+      filesChanged,
+      testsSummary: `${evidence.passed} passed / ${evidence.failed} failed via \`${evidence.command}\` (evidence ${evidence.id}).`,
+    });
+
+    // ---- 11-12. UPDATE STATE ---------------------------------------------
+    sm.transition('success');
+    const observedAfter = this.observer.observe(runId, { runTests: false });
+    this.reconciler.syncDeclaredState(runId, observedAfter, {
+      milestone: run.work_package.milestone,
+      phase: run.work_package.phase,
+    });
+    this.auditLogger.emit(runId, 'STATE_UPDATED');
+    sm.transition('no_more_work');
+
+    try {
+      this.team.release(run.work_package.phase, { runId });
+    } catch {
+      // releasing someone else's lease is not fatal for closing the run
+    }
+
+    const completed: RunDescriptor = {
+      ...run,
+      status: sm.getState(),
+      finished_at: new Date().toISOString(),
+      result_commit: evidence.commit,
+      review: reviewReport as unknown as Record<string, unknown>,
+      verification,
+      evidence,
+      as_built: { file: path.relative(this.projectRoot, asBuiltPath) },
+      commits: Array.from(new Set(results.map((r) => r.commit).filter(Boolean) as string[])),
+      resulting_state: observedAfter,
+      blockers: undefined,
+    };
+
+    this.saveCurrentRun(completed);
+    this.auditLogger.emit(runId, 'RUN_COMPLETED', {
+      metadata: { verification: verification.verification_id, evidence: evidence.id },
+    });
+    return completed;
+  }
+
+  private deriveTaskNodes(workPackage: WorkPackage, spec?: GitHubSpecKitDocument): TaskDAGNode[] {
+    const domain = workPackage.expected_domains[0] || 'backend';
+    const nodes: TaskDAGNode[] = [];
+
+    const specRequirements = spec?.requirements || [];
+    const requirementIds =
+      workPackage.requirements.length > 0
+        ? workPackage.requirements
+        : specRequirements.map((r) => r.id);
+
+    requirementIds.forEach((reqId, index) => {
+      const specReq = specRequirements.find((r) => r.id === reqId);
+      const acceptance = specReq
+        ? specReq.acceptance_criteria.map((ac) => ac.id)
+        : [`AC-${reqId.replace(/^REQ-/, '')}.1`];
+
+      nodes.push({
+        id: `TASK-${String(index + 1).padStart(3, '0')}`,
+        title: specReq ? specReq.title : `Implement specification for ${reqId}`,
+        domain,
+        requirements: [reqId],
+        acceptance_criteria: acceptance,
+        // Tasks are serialized by default: parallelism is only safe once ownership
+        // boundaries are explicit, and the compiler flags overlapping writes.
+        dependencies: index > 0 ? [`TASK-${String(index).padStart(3, '0')}`] : [],
+        ownership: {
+          write: [`src/**`, `tests/**`],
+          readonly: ['.agentic/specs/**', 'package.json'],
+          forbidden: GLOBAL_FORBIDDEN_PATHS,
+        },
+      });
+    });
+
+    if (nodes.length === 0) {
+      nodes.push({
         id: 'TASK-001',
         title: `Execute work package for ${workPackage.phase}`,
-        domain: workPackage.expected_domains[0] || 'backend',
+        domain,
         requirements: [],
         acceptance_criteria: [],
         dependencies: [],
         ownership: {
-          write: ['src/**'],
+          write: ['src/**', 'tests/**'],
+          readonly: ['.agentic/specs/**'],
+          forbidden: GLOBAL_FORBIDDEN_PATHS,
         },
       });
     }
 
-    const dag = this.taskCompiler.compile(taskNodes);
-    sm.transition('success'); // -> EXECUTION_READY
+    return nodes;
+  }
 
-    // 6. COMPLEXITY & ROUTING
-    const complexityResult = this.complexityEngine.assess({
-      estimatedFiles: taskNodes.length * 2,
-      domainsCount: workPackage.expected_domains.length,
-      hasDatabaseMigration: observedBefore.project.migrations.length > 0,
-    });
-
-    // 7. EXECUTE
-    sm.transition('next'); // -> EXECUTING
-    for (const node of dag.nodes) {
-      const contract = this.executor.createTaskContract(node);
-      this.executor.saveTaskContract(contract);
-      this.executor.recordTaskCompletion(runId, {
-        taskId: node.id,
-        success: true,
-        filesChanged: node.ownership.write,
-        testsCreated: [`tests/${node.id.toLowerCase()}.test.ts`],
-        testOutput: 'PASS (mocked worker execution)',
-        commitHash: observedBefore.git.commit,
-      });
-    }
-
-    // 8. REVIEW
-    sm.transition('success'); // -> REVIEWING
-    const reviewReport = this.reviewPipeline.evaluateReview(runId, []);
-
-    // 9. VERIFY
-    sm.transition('success'); // -> VERIFYING
-    const verificationReport = this.verifier.verify({
-      runId,
-      requirements: taskNodes.map((n) => ({
-        id: n.requirements[0] || n.id,
-        tasks: [n.id],
-        acceptanceCriteria: n.acceptance_criteria,
-      })),
-      evidence: {
-        tests_passed: taskNodes.length,
-        tests_failed: 0,
-        test_suite_output: 'All tests passed successfully.',
-      },
-      verifierType: 'fresh_context',
-    });
-
-    if (verificationReport.status === 'FAIL') {
-      sm.transition('failure'); // -> REMEDIATING
-      const { packages, escalateToHumanGate } = this.remediationEngine.createRemediationPackages(
-        verificationReport,
-        {}
-      );
-      if (escalateToHumanGate) {
-        sm.transition('repeated_failure'); // -> HUMAN_GATE
-      }
-    } else {
-      sm.transition('success'); // -> RECONCILING_IMPLEMENTATION
-    }
-
-    // 10. RECONCILE IMPLEMENTATION & AS-BUILT
-    sm.transition('success'); // -> AS_BUILT
-    this.asBuiltGenerator.generate({
-      runId,
-      milestone: workPackage.milestone,
-      phase: workPackage.phase,
-      baselineCommit: observedBefore.git.commit,
-      resultCommit: observedBefore.git.commit,
-      verificationReport,
-      workPackage,
-      filesChanged: taskNodes.flatMap((n) => n.ownership.write),
-      testsSummary: `${verificationReport.evidence.tests_passed} tests passed.`,
-    });
-
-    // 11. UPDATE STATE
-    sm.transition('success'); // -> UPDATING_STATE
-    this.auditLogger.emit(runId, 'STATE_UPDATED');
-
-    const observedAfter = this.observer.observe(runId);
-    sm.transition('no_more_work'); // -> COMPLETE
-
-    this.auditLogger.emit(runId, 'RUN_COMPLETED');
-
-    const runDescriptor: RunDescriptor = {
-      run_id: runId,
-      status: sm.getState(),
-      started_at: observedBefore.timestamp,
-      finished_at: new Date().toISOString(),
-      baseline_commit: observedBefore.git.commit,
-      result_commit: observedAfter.git.commit,
-      initial_observed_state: observedBefore,
-      work_package: workPackage,
-      dag,
-      verification: verificationReport,
-      resulting_state: observedAfter,
+  private buildDescriptor(input: {
+    runId: string;
+    status: RunDescriptor['status'];
+    observedBefore: RunDescriptor['initial_observed_state'];
+    workPackage: WorkPackage;
+    options: OrchestrationOptions;
+    dag?: RunDescriptor['dag'];
+    contracts?: TaskContract[];
+    complexity?: unknown;
+    executionProvider?: unknown;
+    verificationProvider?: unknown;
+    dispatch?: unknown;
+    blockers?: string[];
+    evidence?: EvidenceRecord;
+  }): RunDescriptor {
+    return {
+      run_id: input.runId,
+      status: input.status,
+      started_at: input.observedBefore?.timestamp || new Date().toISOString(),
+      baseline_commit: input.observedBefore?.git.commit || 'unknown',
+      initial_observed_state: input.observedBefore,
+      work_package: input.workPackage,
+      bmad_briefing: input.options.bmadBriefing,
+      grill_me: input.options.grillResult,
+      decisions: input.options.decisionRecords,
+      spec_kit: input.options.specKitDoc,
+      dag: input.dag,
+      tasks: input.contracts,
+      routing: {
+        complexity: input.complexity,
+        execution_provider: input.executionProvider,
+        verification_provider: input.verificationProvider,
+      } as Record<string, unknown>,
+      dispatch: input.dispatch as Record<string, unknown>,
+      evidence: input.evidence,
+      blockers: input.blockers,
     };
-
-    this.saveCurrentRun(runDescriptor);
-    return runDescriptor;
   }
 
   private saveCurrentRun(run: RunDescriptor) {
@@ -238,7 +597,8 @@ export class Orchestrator {
       fs.mkdirSync(runsDir, { recursive: true });
     }
 
-    fs.writeFileSync(path.join(execDir, 'current-run.json'), JSON.stringify(run, null, 2), 'utf8');
-    fs.writeFileSync(path.join(runsDir, 'run.json'), JSON.stringify(run, null, 2), 'utf8');
+    const serialized = JSON.stringify(run, null, 2);
+    fs.writeFileSync(path.join(execDir, 'current-run.json'), serialized, 'utf8');
+    fs.writeFileSync(path.join(runsDir, 'run.json'), serialized, 'utf8');
   }
 }

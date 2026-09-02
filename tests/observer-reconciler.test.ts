@@ -1,11 +1,35 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+import { execSync } from 'child_process';
 import { Observer } from '../src/core/observer.js';
 import { Reconciler } from '../src/core/reconciler.js';
+import { Scaffolder } from '../src/core/scaffolder.js';
 import { ObservedState, DeclaredState } from '../src/types/state.js';
 
 describe('Observer & Reconciler', () => {
-  const observer = new Observer();
-  const reconciler = new Reconciler();
+  let tempDir: string;
+  let observer: Observer;
+  let reconciler: Reconciler;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentic-observe-'));
+    try {
+      execSync('git init', { cwd: tempDir, stdio: 'ignore' });
+    } catch {
+      // ignore
+    }
+    new Scaffolder().scaffold(tempDir, { autoObserve: false });
+    observer = new Observer(tempDir);
+    reconciler = new Reconciler(tempDir);
+  });
+
+  afterEach(() => {
+    if (fs.existsSync(tempDir)) {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 
   it('should observe current repository metadata without mutating source code', () => {
     const state = observer.observe('RUN-TEST-OBS');
@@ -14,6 +38,50 @@ describe('Observer & Reconciler', () => {
     expect(state.project.name).toBeDefined();
     expect(state.tests).toBeDefined();
     expect(Array.isArray(state.risks)).toBe(true);
+  });
+
+  it('reports an unmeasured test suite as pending, never as passing', () => {
+    fs.writeFileSync(
+      path.join(tempDir, 'package.json'),
+      JSON.stringify({ name: 'fixture', scripts: { test: 'exit 0' } }),
+      'utf8'
+    );
+
+    const notMeasured = observer.observe('RUN-TEST-PENDING', { runTests: false });
+    expect(notMeasured.tests.status).toBe('pending');
+    expect(notMeasured.tests.evidence_id).toBeUndefined();
+    expect(notMeasured.risks.join(' ')).toContain('not measured');
+
+    const measured = observer.observe('RUN-TEST-MEASURED', { runTests: true });
+    expect(measured.tests.status).toBe('pass');
+    expect(measured.tests.evidence_id).toBeDefined();
+    expect(observer.getLastEvidence()?.source).toBe('executed');
+  });
+
+  it('rewrites the declared state from observed truth when asked to sync', () => {
+    const observed: ObservedState = {
+      run_id: 'RUN-TEST-SYNC',
+      git: { branch: 'main', commit: 'abc', is_clean: true, dirty_files: [], recent_commits: [] },
+      project: { name: 'fixture', stack: [], scripts: {}, migrations: [] },
+      tests: { status: 'pass', passed: 3, failed: 0, skipped: 0, duration_ms: 10, failed_test_files: [] },
+      requirements: { 'REQ-042': { status: 'done', verified: true } },
+      tasks: { 'TASK-001': { status: 'completed' } },
+      specs: { planned: [], as_built: [] },
+      risks: [],
+      blockers: [],
+      timestamp: new Date().toISOString(),
+    };
+
+    const declared = reconciler.syncDeclaredState('RUN-TEST-SYNC', observed, { phase: 'P-042' });
+    expect(declared.requirements['REQ-042'].status).toBe('done');
+    expect(declared.tasks['TASK-001'].status).toBe('completed');
+    expect(declared.phase).toBe('P-042');
+    expect(declared.status).toBe('complete');
+
+    const onDisk = JSON.parse(
+      fs.readFileSync(path.join(tempDir, '.agentic', 'state', 'declared-state.json'), 'utf8')
+    );
+    expect(onDisk.requirements['REQ-042'].status).toBe('done');
   });
 
   it('should detect mismatch when declared done but observed is not_started', () => {

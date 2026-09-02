@@ -1,3 +1,6 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { execSync } from 'child_process';
 import { ConfigLoader } from './config-loader.js';
 import { ProvidersConfig } from '../types/config.js';
@@ -13,9 +16,11 @@ export interface ProviderInstallStatus {
 
 export class ProviderInstaller {
   private configLoader: ConfigLoader;
+  private projectRoot: string;
 
   constructor(projectRoot: string = process.cwd()) {
-    this.configLoader = new ConfigLoader(projectRoot);
+    this.projectRoot = path.resolve(projectRoot);
+    this.configLoader = new ConfigLoader(this.projectRoot);
   }
 
   public checkProviders(): ProviderInstallStatus[] {
@@ -47,12 +52,39 @@ export class ProviderInstaller {
         runtimeNotes: 'For Claude MCP: claude mcp add ruflo -- npx ruflo@latest mcp start',
       },
       {
+        name: 'BMAD Method (Business, Modeling, Architecture, Delivery)',
+        category: 'planner',
+        engine: providers.bmad?.engine || 'bmad-method',
+        // The native BMAD engine ships with this package; an external bmad-core
+        // plugin is only reported as present when it is actually on disk.
+        installed: this.isPluginPresent('bmad'),
+        installCommand: 'agy plugin install https://github.com/bmad-method/bmad-core',
+        runtimeNotes: 'Agile AI development framework: prompt refinement, domain modeling, architecture guardrails, and delivery slices.',
+      },
+      {
+        name: 'GitHub Spec Kit (Spec-Driven Development / SDD)',
+        category: 'specification',
+        engine: providers.spec_kit?.engine || 'github-spec-kit',
+        installed: this.isPluginPresent('spec-kit'),
+        installCommand: 'agy plugin install https://github.com/github/spec-kit',
+        runtimeNotes: 'Contract-first specification toolkit: scenario trees, AC matrices, and interface contracts.',
+      },
+      {
         name: 'Superpowers Process Discipline',
         category: 'process',
         engine: providers.process?.engine === 'superpowers' ? 'superpowers' : 'superpowers (optional)',
         installed: this.isSuperpowersInstalled(),
         installCommand: 'agy plugin install https://github.com/obra/superpowers',
         runtimeNotes: 'For Claude: /plugin install superpowers@claude-plugins-official | For Antigravity: agy plugin install https://github.com/obra/superpowers',
+      },
+      {
+        name: 'Matt Pocock Skills (technique pack: to-spec, tdd, code-review, diagnosing-bugs)',
+        category: 'domain_skills',
+        engine: providers.domain_skills?.engine || 'mattpocock-skills',
+        installed: this.isPluginPresent('mattpocock') || this.isPluginPresent('to-spec'),
+        installCommand: 'npx skills@latest add mattpocock/skills',
+        runtimeNotes:
+          'For Claude Code: claude plugins install mattpocock-skills | Then run /setup-matt-pocock-skills once per repository. Stage mapping lives in .agentic/orchestrator/skills.yaml.',
       },
       {
         name: 'ECC (Everything Claude Code / Enterprise Coding Capabilities)',
@@ -95,15 +127,61 @@ export class ProviderInstaller {
     }
   }
 
+  /**
+   * Real check against the npm/npx cache. The previous implementation returned
+   * `false` unconditionally, which made every `installed` flag meaningless.
+   */
   private isPackageCached(pkg: string): boolean {
+    const scoped = pkg.startsWith('@');
+    const relative = scoped ? pkg.split('/') : [pkg];
+    const candidates = [
+      path.join(this.projectRoot, 'node_modules', ...relative),
+      path.join(os.homedir(), '.npm', '_npx'),
+    ];
+
+    if (fs.existsSync(candidates[0])) return true;
+
+    const npxCache = candidates[1];
+    if (!fs.existsSync(npxCache)) return false;
+    try {
+      for (const entry of fs.readdirSync(npxCache)) {
+        if (fs.existsSync(path.join(npxCache, entry, 'node_modules', ...relative))) {
+          return true;
+        }
+      }
+    } catch {
+      return false;
+    }
+    return false;
+  }
+
+  /** Looks for an installed plugin/skill directory in the usual agent locations. */
+  private isPluginPresent(name: string): boolean {
+    const roots = [
+      path.join(this.projectRoot, '.claude', 'plugins'),
+      path.join(this.projectRoot, '.agents', 'skills'),
+      path.join(this.projectRoot, '.antigravity', 'plugins'),
+      path.join(os.homedir(), '.claude', 'plugins'),
+      path.join(os.homedir(), '.antigravity', 'plugins'),
+    ];
+    for (const root of roots) {
+      if (!fs.existsSync(root)) continue;
+      try {
+        if (fs.readdirSync(root).some((entry) => entry.toLowerCase().includes(name))) {
+          return true;
+        }
+      } catch {
+        continue;
+      }
+    }
     return false;
   }
 
   private isSuperpowersInstalled(): boolean {
-    return true; // Active or integrated via runtime skills
+    return this.isPluginPresent('superpowers');
   }
 
   private isEccInstalled(): boolean {
-    return true; // Available via local/global ecc plugins & skills
+    return this.isPluginPresent('everything-claude-code') || this.isPluginPresent('ecc');
   }
 }

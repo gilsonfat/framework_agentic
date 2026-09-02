@@ -1,0 +1,3 @@
+# Agentic SDLC: append-only streams must merge by union, never by conflict.
+.agentic/audit/events.jsonl merge=union -diff
+.agentic/registry/ids.json merge=union

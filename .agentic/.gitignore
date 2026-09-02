@@ -1,0 +1,18 @@
+# Machine-local artifacts: never share these across the team.
+# Observed state is per-checkout truth; runs and evidence are per-machine executions.
+state/observed-state.json
+state/reconciled-state.json
+state/diff.json
+state/history/
+execution/current-run.json
+execution/runs/
+execution/inbox/
+execution/results/
+verification/evidence/
+verification/reports/
+reconciliation/reports/
+team/leases/
+tasks/current/
+
+# Shared team truth is committed: orchestrator/, specs/, planning/, gates/,
+# registry/, prompts/, templates/, audit/, verification/requirement-matrix.json

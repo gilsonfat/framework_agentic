@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(agentic audit:*)",
+      "Bash(agentic do:*)",
+      "Bash(agentic doctor)",
+      "Bash(agentic doctor:*)",
+      "Bash(agentic evidence:*)",
+      "Bash(agentic gate list)",
+      "Bash(agentic grill:*)",
+      "Bash(agentic ids:*)",
+      "Bash(agentic observe:*)",
+      "Bash(agentic prompt:*)",
+      "Bash(agentic reconcile:*)",
+      "Bash(agentic report:*)",
+      "Bash(agentic resume)",
+      "Bash(agentic run:*)",
+      "Bash(agentic skills:*)",
+      "Bash(agentic spec:*)",
+      "Bash(agentic status)",
+      "Bash(agentic status:*)",
+      "Bash(agentic team claim:*)",
+      "Bash(agentic team who)",
+      "Bash(agentic verify:*)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "agentic status",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,284 +1,341 @@
 # Agentic SDLC Orchestrator
 
-O **Agentic SDLC Orchestrator** é um framework de entrega de software autônomo, determinístico e baseado em estados. Ele orquestra os melhores frameworks e ferramentas de engenharia de software com IA (**GSD, TLC, Ruflo, Superpowers e ECC**) através de um pipeline rigoroso de **12 etapas não-negociáveis**.
+Framework de entrega de software **determinístico, orientado a estado e com fechamento condicionado a evidência**. Ele não escreve o seu código: ele estrutura o pedido, especifica o contrato, define quem pode escrever o quê, entrega o pacote de trabalho ao agente de codificação (Claude Code, Antigravity/Gemini, Codex, Ruflo ou um humano) e **só declara algo pronto contra a saída real da suíte de testes**.
 
 ---
 
-## ⚡ Os 6 Invariantes Não-Negociáveis
+## A ideia central: três responsabilidades que nunca se misturam
 
-1. **Observed State > Declared State**: A realidade do código (`git status`, testes, branches, schemas e migrations) sempre se sobrepõe a qualquer documentação declarada.
-2. **Nenhum Requisito Concluído sem Evidência**: Nenhum requisito é marcado como `DONE` sem prova de execução (`implemented && tested && verified`).
-3. **Especificação Antes da Implementação**: Contratos formais com identificadores únicos e estáveis (`REQ-###`, `AC-###.#`, `TASK-###`).
-4. **TDD Estrito Obrigatório**: Ciclo Red -> Green -> Refactor para toda mudança de código não-trivial.
-5. **Fresh Verifier (Verificador Independente)**: Verificação de critérios de aceitação executada com contexto limpo e isolado.
-6. **As-Built Spec a partir da Realidade**: Documentação final extraída do git diff real e das evidências de testes aprovados.
+| Responsabilidade | Quem faz | Quem nunca faz |
+| :--- | :--- | :--- |
+| Estruturar, especificar, barrar risco, auditar | CLI `agentic` (determinístico, sem LLM) | o agente |
+| Escrever código e testes | o agente de codificação | a CLI |
+| Declarar que algo está PRONTO | o verificador, a partir de teste executado | os dois acima |
 
----
-
-## 🧩 Motores e Provedores Integrados
-
-O framework permite utilizar o ecossistema completo ou escolher de forma modular quais motores ativar:
-
-| Categoria | Motor Padrão | Alternativa / Opcional | Descrição |
-| :--- | :--- | :--- | :--- |
-| **Planejamento** | **GSD** (*Get Shit Done*) | `native-planner` | Delimitação de milestones, fases e pacotes de trabalho (`WorkPackage`). |
-| **Especificação** | **TLC** (*Tech Leads Club*) | `native-spec` | Contratos formais de requisitos e critérios de aceitação. |
-| **Execução & Swarm** | **Ruflo** | `native-swarm` / `native-agent` | Estratégia de execução adaptativa (Single Agent, Paralelo, Swarm). |
-| **Processo & TDD** | **Superpowers** | **ECC** (*Everything Claude Code*) / `native-tdd` | Disciplina de engenharia, TDD estrito, debugging sistemático e isolamento em worktrees. |
-| **Verificação** | **TLC Fresh Verifier** | `native-verifier` | Verificação independente com contexto isolado e fechamento da matriz de requisitos. |
-
-> 💡 **Superpowers vs ECC**: Você pode alternar facilmente entre **Superpowers** (focado em disciplina TDD e worktrees) e **ECC** (focado em suíte corporativa com `tdd-workflow`, `verification-loop`, `security-review` e `agentic-engineering`).
-
----
-
-## 🚀 Guia Rápido de Instalação e Uso
-
-### Passo 1: Instalar o CLI Globalmente (Feito uma única vez na máquina)
-
-Na pasta deste repositório (`framework_agentic`):
+É daí que sai o formato de uso em **duas fases**:
 
 ```bash
-# 1. Instalar dependências e compilar o TypeScript
-npm install
-npm run build
+# Fase 1 — estrutura e despacha (gera pacotes de prompt, nenhum código)
+agentic prompt "Implementar rota de checkout com cartão de crédito"
 
-# 2. Registrar o comando 'agentic' globalmente no sistema operacional
-npm link
+# ... o agente implementa cada pacote de .agentic/execution/inbox/ com TDD estrito ...
+agentic report TASK-001 --status completed --files "src/checkout/route.ts" --commit a1b2c3d
+
+# Fase 2 — fecha com evidência real (roda a suíte, verifica, gera as-built, atualiza estado)
+agentic verify
 ```
+
+Entre as duas fases o run fica no estado `AWAITING_AGENT`. Isso **não é falha**: é o framework esperando implementação. Nada entra na matriz de requisitos antes de `agentic verify` obter um registro de evidência de uma execução real.
 
 ---
 
-### Passo 2: Inicializar o Framework em Qualquer Projeto
+## Os invariantes (e como cada um é imposto no código)
 
-Navegue até a pasta de qualquer projeto novo ou existente (ex: `meu-app`):
-
-```bash
-cd /caminho/para/meu-app
-```
-
-#### Opção A: Instalação Completa Padrão (com Superpowers)
-```bash
-agentic setup
-```
-
-#### Opção B: Instalação com ECC (Enterprise Coding Capabilities)
-```bash
-agentic setup --with-ecc
-```
-
-#### Opção C: Instalação Modular Personalizada
-Você pode desativar ou substituir qualquer parte da biblioteca conforme a necessidade do seu projeto:
-
-```bash
-# Exemplo 1: Usar ECC, mas sem GSD e sem Ruflo
-agentic setup --process ecc --without-gsd --without-ruflo
-
-# Exemplo 2: Usar TDD nativo sem ferramentas externas
-agentic setup --process native --without-gsd --without-tlc --without-ruflo
-
-# Exemplo 3: Instalação silenciosa sem gerar arquivos de regras na raiz
-agentic setup --without-rules --without-commands
-```
-
----
-
-### 🎛️ Todas as Opções do `agentic setup`
-
-| Flag | Tipo | Padrão | Descrição |
-| :--- | :--- | :--- | :--- |
-| `-t, --target <path>` | `string` | CWD | Diretório de destino do projeto. |
-| `--process <engine>` | `superpowers \| ecc \| native` | `superpowers` | Escolhe o motor de processo de implementação e TDD. |
-| `--with-ecc` | `boolean` | `false` | Atalho para selecionar o **ECC** como motor de processo. |
-| `--without-gsd` | `boolean` | `false` | Desativa o GSD e utiliza o planejador nativo. |
-| `--without-tlc` | `boolean` | `false` | Desativa o TLC e utiliza o especificador/verificador nativo. |
-| `--without-ruflo` | `boolean` | `false` | Desativa o Ruflo e utiliza o executor/swarm nativo. |
-| `--without-rules` | `boolean` | `false` | Não gera os arquivos `AGENTS.md`, `GEMINI.md`, `CLAUDE.md`, `CODEX.md`. |
-| `--without-commands` | `boolean` | `false` | Não gera os comandos slash do Claude Code / Antigravity. |
-| `--all` | `boolean` | `false` | Tenta instalar automaticamente os pacotes externos no sistema. |
-| `-f, --force` | `boolean` | `false` | Sobrescreve arquivos e configurações existentes. |
-
-#### O que o `agentic setup` realiza automaticamente:
-1. **Inicialização do Git**: Inicializa o repositório Git caso ainda não exista.
-2. **Scaffold Completo**: Cria toda a estrutura `.agentic/` (schemas JSON, templates, políticas e configs YAML).
-3. **Configuração de Motores**: Configura o arquivo `providers.yaml` com a seleção feita (Superpowers, ECC, GSD, TLC, etc.).
-4. **Regras de Workspace para IAs**: Cria `AGENTS.md`, `GEMINI.md`, `CLAUDE.md` e `CODEX.md` para que qualquer assistente siga o ciclo de 12 etapas por padrão.
-5. **Skill para o Antigravity**: Instala a skill `.agents/skills/agentic/SKILL.md`.
-6. **Slash Commands para o Claude Code**: Instala os comandos em `.claude/commands/`.
-7. **Observação & Reconciliação Inicial**: Mapeia o estado real do projeto (`observed-state.json`).
-8. **Diagnóstico do Doctor**: Executa a validação de saúde do projeto emitindo o relatório final.
-
----
-
-### Passo 3: Verificar a Saúde do Framework (`agentic doctor`)
-
-No diretório do seu projeto:
-
-```bash
-agentic doctor
-```
-
-Exemplo de saída de diagnóstico:
-```text
-========================================
-      Agentic SDLC Doctor Diagnostic     
-========================================
-
-Git repository             [PASS  ] — Initialized and working
-Orchestrator Configs       [PASS  ] — All YAML configurations valid
-Config Schemas             [PASS  ] — All 6 schemas loaded
-Observed State             [PASS  ] — observed-state.json exists
-Requirement Matrix         [PASS  ] — requirement-matrix.json present
-Audit Log                  [PASS  ] — events.jsonl active
-GSD Planner Provider       [PASS  ] — Engine: gsd
-TLC Spec & Verifier        [PASS  ] — Engine: tlc-spec-driven (Fresh Context: true)
-Ruflo Execution Provider   [PASS  ] — Engine: ruflo (Fallback: native-agent)
-Process Provider           [PASS  ] — Engine: superpowers (or ECC)
-
->>> STATUS: READY — All critical components verified.
-========================================
-```
-
----
-
-## 🤖 Como Executar Prompts e Tarefas
-
-### 1. Pelo Terminal / CLI (Qualquer Prompt Livre)
-
-O **Auto-Orquestrador** ingere qualquer instrução em linguagem natural, deduz o domínio, dimensiona a complexidade (XS a XL), compila a DAG sem ciclos, aplica o TDD e entrega o relatório de verificação e a especificação As-Built:
-
-```bash
-# Executar qualquer instrução:
-agentic prompt "Implementar rota de autenticação JWT com refresh token e middleware de proteção"
-
-# Usando o alias 'agentic do':
-agentic do "Criar tabela de produtos com migrations Knex e validação Zod"
-```
-
----
-
-### 2. No Antigravity (Google DeepMind)
-
-No chat do Antigravity:
-- Digite o comando `/agentic`:
-  ```text
-  /agentic criar tela de checkout com Stripe
-  ```
-- Ou envie seu prompt normalmente. As regras em [`AGENTS.md`](./AGENTS.md) e [`GEMINI.md`](./GEMINI.md) instruem o assistente a sempre seguir o ciclo de 12 etapas.
-
----
-
-### 3. No Claude Code (Anthropic)
-
-Utilize os comandos slash nativos:
-```bash
-/agentic implementar fila de processamento de emails com BullMQ
-/agentic-status
-/agentic-doctor
-/agentic-run
-```
-
----
-
-### 4. No ChatGPT / OpenAI Codex
-
-O arquivo [`CODEX.md`](./CODEX.md) na raiz do projeto instrui o Codex e Custom GPTs a aplicarem a máquina de estados, TDD estrito e verificação independente.
-
----
-
-## 📋 Tabela Completa de Comandos CLI
-
-| Comando | Descrição |
+| Invariante | Mecanismo de imposição |
 | :--- | :--- |
-| **`agentic setup [opções]`** | Configura e instala o framework por completo (completo ou modular com flags). |
-| **`agentic prompt "<prompt>"`** (alias **`do`**) | Auto-orquestra qualquer instrução em linguagem natural pelo ciclo de 12 etapas. |
-| **`agentic doctor`** | Executa bateria de testes diagnósticos de prontidão do framework e provedores. |
-| **`agentic status`** | Exibe o painel em tempo real de requisitos, fase atual e histórico de testes. |
-| **`agentic observe`** | Inspeciona branches, commits, testes, dirty files e schemas reais do repositório. |
-| **`agentic reconcile`** | Compara o estado declarado vs a realidade observada (`Observed > Declared`). |
-| **`agentic run [--phase <id>]`** | Executa o ciclo de entrega da fase especificada. |
-| **`agentic resume`** | Retoma com segurança execuções interrompidas a partir do último checkpoint (`current-run.json`). |
-| **`agentic providers`** | Lista e inspeciona o status de integração dos provedores (GSD, TLC, Ruflo, Superpowers, ECC). |
-| **`agentic init`** | Inicializa a estrutura `.agentic` básica no projeto. |
-| **`agentic bootstrap`** | Executa inicialização rápida em repositórios brownfield ou greenfield. |
+| **Observado > Declarado** | `Observer` mede o repositório de verdade; status de teste não medido é reportado como `pending`, nunca como `pass`. `agentic reconcile --sync` reescreve o declarado a partir do observado. |
+| **Nada PRONTO sem evidência** | `EvidenceCollector` é o único componente autorizado a afirmar que testes passaram: executa o comando, captura exit code, conta os testes, guarda o SHA-256 da saída completa. O `Verifier` recusa fechamento (`BLOCKED`) sem um registro `source: executed` com exit 0. |
+| **Suposição não é decisão** | O Grill-Me marca cada resposta não humana como `assumed`. ADR nasce `PROPOSED` e só vira `ACCEPTED` quando todas as sondagens forem respondidas (`--answers arquivo.json`). Suposições viajam explicitamente dentro do pacote de prompt da tarefa. |
+| **Especificação antes da implementação** | Contrato Spec Kit (`SPEC-###`, `REQ-###`, `AC-###.#`, Given-When-Then) gerado antes do despacho, com IDs sequenciais do registro (`.agentic/registry/ids.json`) — sem colisão entre pessoas e runs. |
+| **TDD estrito** | Cada pacote de prompt exige RED → GREEN → REFACTOR com a saída de teste, e proíbe enfraquecer testes existentes. |
+| **Autor ≠ verificador** | A verificação roda como `fresh_context`; em modo `local` a política bloqueia quando autor e verificador são a mesma identidade. |
+| **Human gates barram** | `GateKeeper` avalia `gates.yaml` + `policies.yaml` **antes de qualquer despacho** e persiste a solicitação em `.agentic/gates/`. Segurança/autenticação, migração destrutiva, complexidade XL e remediação esgotada param o run. |
+| **Ownership isolado** | Cada tarefa declara WRITE / READ-ONLY / FORBIDDEN; o compilador de DAG detecta ciclos (Kahn) e conflitos de escrita entre tarefas paralelas. |
+| **Auditabilidade** | `events.jsonl` é uma cadeia de hash SHA-256 com ator, sequência e `prev_hash`. `agentic audit verify` detecta edição e remoção de eventos, e distingue isso de escrita concorrente. |
+| **Loop idempotente** | Orçamento de remediação persistido por requisito (não por run, que seria trivial de burlar); `agentic run` retoma o run estacionado em vez de criar outro. |
 
 ---
 
-## 🔄 O Ciclo de 12 Etapas Detalhado
+## Fluxo completo do ciclo
 
 ```mermaid
 flowchart TD
-    A[1. OBSERVE] --> B[2. RECONCILE]
-    B --> C[3. PLAN - GSD]
-    C --> D[4. SPECIFY - TLC]
-    D --> E[5. COMPILE DAG]
-    E --> F[6. ORCHESTRATE - Ruflo]
-    F --> G[7. IMPLEMENT - Superpowers / ECC TDD]
-    G --> H[8. 4-LAYER REVIEW]
-    H --> I{9. VERIFY - TLC Fresh Verifier}
-    I -- Falhou --> J[10. REMEDIATE Loop]
-    J --> G
-    I -- Passou --> K[11. AS-BUILT SPEC]
-    K --> L[12. UPDATE STATE]
+    A[1. OBSERVE<br/>git + testes + migrations] --> B[2. RECONCILE<br/>declarado vs observado]
+    B --> C[3. REFINE & PROBE<br/>BMAD + Grill-Me + ADR]
+    C --> D[4. PLAN & SPECIFY<br/>work package + Spec Kit]
+    D --> E{5. HUMAN GATES}
+    E -- pendente --> G1[HUMAN_GATE<br/>agentic gate approve]
+    E -- livre --> F[6. COMPILE DAG<br/>Kahn + conflitos de escrita]
+    F --> H[7. DISPATCH<br/>pacotes de prompt por onda]
+    H --> I[AWAITING_AGENT<br/>agente implementa com TDD]
+    I --> J[9. REPORT<br/>agentic report]
+    J --> K[10. REVIEW<br/>L1..L4]
+    K --> L[11. VERIFY<br/>evidência executada]
+    L -- FAIL --> M[REMEDIATE<br/>máx. 3, depois gate]
+    M --> I
+    L -- BLOCKED --> G1
+    L -- PASS --> N[12. AS-BUILT + ESTADO<br/>matriz + declared-state]
+    N --> O[COMPLETE]
 ```
-
-1. **OBSERVE**: Inspeciona branch, commit, dirty files, testes e migrações reais.
-2. **RECONCILE**: Classifica divergências entre estado declarado e realidade observada.
-3. **PLAN (GSD)**: Delimita milestone, fase e gera o pacote de trabalho (`WorkPackage`).
-4. **SPECIFY (TLC)**: Especifica contratos formais com IDs estáveis (`REQ-###`, `AC-###.#`).
-5. **COMPILE DAG**: Constrói grafo de dependências com algoritmo de Kahn (bloqueia ciclos e previne conflitos de escrita concorrente).
-6. **ORCHESTRATE (RUFLO)**: Escolhe a estratégia de execução com base na complexidade (XS/S: Single agent, M: Paralelo, L/XL: Swarm).
-7. **IMPLEMENT (SUPERPOWERS / ECC)**: Ciclo TDD estrito (RED -> GREEN -> REFACTOR) e isolamento em worktrees.
-8. **REVIEW**: Revisão em 4 camadas (L1 Worker, L2 Build/Test, L3 Corretude, L4 Segurança Read-Only).
-9. **VERIFY (TLC FRESH VERIFIER)**: Verificação independente com contexto limpo (nenhum requisito é fechado sem teste executado).
-10. **REMEDIATE**: Loop de autocorreção em caso de falha (até 3 tentativas automáticas antes do Human Gate).
-11. **AS-BUILT SPEC**: Extração de documentação fiel a partir do git diff e relatórios de teste reais.
-12. **UPDATE STATE**: Atualiza a matriz de requisitos (`requirement-matrix.json`) e fecha o ciclo de entrega.
 
 ---
 
-## 📁 Estrutura do Diretório `.agentic/`
+## Instalação
+
+```bash
+npm install && npm run build && npm link
+```
+
+---
+
+## Um comando por projeto
+
+```bash
+cd /caminho/do/projeto
+agentic init
+```
+
+Isso faz tudo: cria a arquitetura `.agentic/`, **conecta todos os produtos de IA ao mesmo workflow**, declara a política de colaboração do time, observa o repositório e roda o diagnóstico — terminando com o que fazer a seguir.
+
+Variações:
+
+```bash
+agentic init --agents claude,gemini        # só os produtos que o time usa
+agentic init --with-ecc                    # ECC como engine de processo
+agentic init --all                         # tenta instalar também os engines externos
+agentic init --scaffold-only               # só o .agentic/, sem tocar em arquivos de IA
+agentic init --without-hooks               # sem o hook de SessionStart do Claude Code
+agentic init --without-permissions         # sem o allowlist em .claude/settings.json
+```
+
+`agentic setup` e `agentic bootstrap` são aliases de `init`, mantidos para scripts existentes.
+
+---
+
+## Um workflow, todos os produtos de IA
+
+O protocolo é único; o que muda é o arquivo que cada produto lê e como você dispara. `agentic init` escreve tudo, e `agentic agents` mostra o estado.
+
+| Produto | Como você usa | Arquivos gerados |
+| :--- | :--- | :--- |
+| **Claude Code** | `/agentic <pedido>` | `CLAUDE.md`, `.claude/commands/*.md` (9 comandos), `.claude/skills/agentic/`, `.claude/settings.json` |
+| **Google Antigravity** | `/agentic <pedido>` | `AGENTS.md`, `.agents/skills/agentic/SKILL.md`, `.agents/workflows/*.md` |
+| **Gemini CLI** | `/agentic <pedido>`, `/agentic:verify`, `/agentic:grill`… | `GEMINI.md`, `.gemini/commands/*.toml` |
+| **OpenAI Codex** | pede normalmente — `AGENTS.md` rege a sessão | `AGENTS.md`, `CODEX.md` |
+| **ChatGPT** (sem acesso ao repo) | cola `.agentic/agents/CHATGPT.md` e descreve a tarefa | `.agentic/agents/CHATGPT.md` |
+| **Cursor** | pede normalmente — regra `alwaysApply` | `.cursor/rules/agentic.mdc` |
+| **GitHub Copilot** | pede normalmente | `.github/copilot-instructions.md` |
+| **Windsurf** | pede normalmente | `.windsurfrules` |
+
+```bash
+agentic agents                          # o que está conectado e o que existe nesta máquina
+agentic agents sync                     # (re)escreve os arquivos de instrução
+agentic agents sync --agents claude     # só um produto
+agentic agents sync --force             # sobrescreve arquivos editados à mão
+```
+
+Três cuidados na geração:
+
+1. **Arquivos escritos à mão são preservados.** Só sobrescrevemos o que o próprio framework gerou (detectado pelo cabeçalho) — a menos que você passe `--force`. `AGENTS.md` com regras suas continua intacto.
+2. **`.claude/settings.json` é mesclado, nunca substituído.** O allowlist adiciona os comandos `agentic` às permissões existentes, e o hook de `SessionStart` (que mostra o estado do ciclo ao abrir a sessão) só é inserido uma vez. Decisões que precisam de humano — `gate approve`, `gate reject`, `team release` — **não** entram no allowlist de propósito.
+3. **Arquivos injetados em toda requisição ficam curtos.** Cursor, Copilot e Windsurf recebem o protocolo compacto (~40 linhas); os arquivos longos vão para os produtos que os carregam sob demanda.
+
+---
+
+## Uso
+
+### Terminal
+
+```bash
+agentic prompt "Criar tabela de produtos com migrations e validação Zod"
+agentic prompt "Criar checkout Stripe" --answers answers.json   # decisões humanas
+agentic prompt "Refatorar persistência" --strict                # recusa suposições
+agentic grill "Desenhar arquitetura de notificações"            # só sondagem + ADR
+agentic spec "Sistema de notificações em tempo real"            # só contrato
+agentic report TASK-001 --status completed --commit a1b2c3d
+agentic verify
+```
+
+### Claude Code
+
+```text
+/agentic implementar fila de e-mails com BullMQ
+/agentic-grill desenhar arquitetura de microsserviços
+/agentic-verify     /agentic-gate     /agentic-team
+/agentic-skills     /agentic-status   /agentic-doctor
+```
+
+### Gemini CLI
+
+```text
+/agentic implementar fila de e-mails com BullMQ
+/agentic:grill      /agentic:verify   /agentic:status
+/agentic:gate       /agentic:skills
+```
+
+### Antigravity
+
+```text
+/agentic implementar fila de e-mails com BullMQ
+/agentic-verify     /agentic-grill    /agentic-status
+```
+
+### Codex / Cursor / Copilot / Windsurf
+
+Peça normalmente: o arquivo de instruções de cada um já obriga o fluxo de duas fases.
+
+### ChatGPT
+
+Cole `.agentic/agents/CHATGPT.md` numa conversa nova e descreva a tarefa. Como o ChatGPT não roda comandos, ele devolve os comandos `agentic` exatos para você executar e **espera a saída real** antes de continuar — nunca presume que passou.
+
+
+---
+
+## Trabalho em equipe
+
+O ponto que separa "framework pessoal" de "framework de time":
+
+```bash
+agentic team who                    # identidade + todas as reivindicações ativas
+agentic team claim P-012 --note "checkout"
+agentic team release P-012
+agentic team init                   # (re)declara o split compartilhado/local
+```
+
+- **Reivindicação (lease)**: o orquestrador **recusa** rodar uma fase reivindicada por outra pessoa; `--force` assume o controle e isso fica registrado na auditoria. Leases expiram (TTL padrão de 4h) para não travar o time.
+- **Split de artefatos**: `specs/`, `decisions/`, `planning/`, `gates/`, `registry/`, `prompts/`, `templates/` e a matriz de requisitos são verdade compartilhada e vão para o Git. `state/observed-state.json`, `execution/runs/`, `execution/inbox/`, `execution/results/`, `verification/evidence/` e `team/leases/` são locais da máquina (`.agentic/.gitignore`) — era exatamente onde todo mundo conflitava em cada pull.
+- **Auditoria mesclável**: `.agentic/audit/events.jsonl` usa `merge=union` e cadeia de hash; escrita concorrente aparece como *fork*, não como corrupção.
+- **Identidade**: todo evento, lease, decisão de gate e fechamento registra `git config user.email` (ou `AGENTIC_ACTOR`).
+
+---
+
+## Tabela de comandos
+
+| Comando | Descrição |
+| :--- | :--- |
+| `agentic prompt "<x>"` (alias `do`) | Estrutura a instrução (BMAD → Grill-Me → ADR → Spec Kit) e despacha os pacotes de prompt |
+| `agentic report <TASK> --status <s>` | Devolve o resultado de uma tarefa ao orquestrador |
+| `agentic verify` | Coleta evidência real, verifica, gera as-built e atualiza o estado |
+| `agentic run [--phase <id>]` | Roda ou retoma o ciclo (`--no-resume`, `--dry-run`, `--force`) |
+| `agentic grill "<x>" [--answers f.json]` | Sondagem adversarial e registro de ADR |
+| `agentic spec "<x>"` | Somente o contrato Spec Kit |
+| `agentic evidence [--show] [--command <cmd>]` | Executa a suíte e grava o registro de evidência |
+| `agentic gate list \| approve <id> \| reject <id>` | Decisões de human gate |
+| `agentic team init \| who \| claim \| release` | Coordenação de equipe |
+| `agentic skills [list \| stage <s> \| install <pack>]` | Pacotes de skills por estágio e disponibilidade real |
+| `agentic agents [list \| sync]` | Produtos de IA conectados ao workflow e (re)geração dos arquivos |
+| `agentic init [--agents <lista>]` (aliases `setup`, `bootstrap`) | Configuração completa do projeto e das integrações |
+| `agentic audit verify \| tail` | Integridade e histórico da auditoria |
+| `agentic observe [--tests]` | Inspeção real do repositório (com medição opcional da suíte) |
+| `agentic reconcile [--sync]` | Compara e (com `--sync`) aplica observado sobre declarado |
+| `agentic status` | Painel: estado, requisitos, tarefas pendentes, gates, leases, próxima ação |
+| `agentic doctor` | Diagnóstico: configs, capacidade de evidência, integridade, providers, time |
+| `agentic ids [--kind REQ]` | Identificadores alocados |
+| `agentic resume [--apply]` | Plano de retomada e retomada efetiva |
+| `agentic providers` | Detecção real dos engines externos |
+
+---
+
+## Motores integrados
+
+O framework tem implementação **nativa** de todos os papéis; os engines externos são melhorias, não pré-requisitos. `agentic providers` e `agentic doctor` mostram o que está realmente detectado nesta máquina em vez de assumir presença.
+
+| Papel | Engine | Função |
+| :--- | :--- | :--- |
+| Refinamento de prompt | **BMAD** (nativo) | Briefing estruturado: Business, Modeling, Architecture, Delivery |
+| Clarificação | **Grill-Me** (nativo) | Sondagem adversarial; separa decisão de suposição |
+| Decisões | **Decision Recorder** (nativo) | ADRs sequenciais em `.agentic/specs/decisions/` |
+| Especificação | **GitHub Spec Kit** / **TLC** | Contratos, matriz de AC, cenários Given-When-Then |
+| Planejamento | **GSD** | Milestones, fases, work packages |
+| Execução | **Ruflo** / delegado / `command` | Estratégia de execução e ponte com o agente |
+| Processo | **Superpowers** / **ECC** | Disciplina de TDD e debugging sistemático |
+| Técnicas por estágio | **mattpocock/skills** | Skills mapeadas por estágio (`skills.yaml`) |
+| Verificação | **TLC Fresh Verifier** (nativo) | Verificação independente sobre evidência executada |
+
+### Pacotes de skills (técnicas compartilhadas)
+
+`.agentic/orchestrator/skills.yaml` mapeia skills externas para os estágios do ciclo, para que o time inteiro aplique a mesma técnica no mesmo passo. O pacote [`mattpocock/skills`](https://github.com/mattpocock/skills) vem mapeado por padrão:
+
+| Estágio | Skill | Para quê |
+| :--- | :--- | :--- |
+| refine | `/grill-with-docs`, `/domain-modeling` | aprofundar o briefing BMAD e a terminologia do domínio |
+| probe | `/grill-me`, `/grilling` | conduzir a entrevista real sobre as sondagens abertas |
+| specify | `/to-spec` | enriquecer o SPEC gerado (IDs continuam vindo do registro) |
+| architect | `/codebase-design`, `/improve-codebase-architecture` | fronteiras de módulo e oportunidades de refactor |
+| compile | `/to-tickets` | decompor o work package (a DAG segue sendo a unidade executável) |
+| prototype | `/prototype` | validação descartável de design |
+| implement | `/implement`, `/tdd` | o próprio loop red-green-refactor |
+| review | `/code-review` | camadas L1 e L3 da revisão |
+| remediate | `/diagnosing-bugs` | debugging sistemático quando o teste não fica verde |
+| merge | `/resolving-merge-conflicts` | resolver conflito por intenção |
+| handoff | `/handoff` | compactar a sessão antes de perder contexto |
+| triage / plan_multi_session | `/triage`, `/wayfinder` | estado de issues e planejamento multi-sessão |
+
+```bash
+agentic skills                              # o que está mapeado e o que está instalado aqui
+agentic skills stage implement --installed  # o que usar durante a implementação
+agentic skills install mattpocock           # imprime o comando (--run executa)
+```
+
+Instalação: `claude plugins install mattpocock-skills` (Claude Code) ou `npx skills@latest add mattpocock/skills` (outros agentes), seguido de `/setup-matt-pocock-skills` uma vez por repositório.
+
+Três regras mantêm a integração honesta:
+
+1. **Detecção real.** Uma skill só é recomendada ao agente quando o pacote é encontrado em disco (`.claude/plugins/*mattpocock*`, `.agents/skills/to-spec`, …). Pacote ausente aparece no prompt pack como "not installed — do not invoke", e no `doctor` como WARN, nunca FAIL: nenhum estágio depende de pacote externo.
+2. **IDs continuam do registro.** Uma skill pode enriquecer um spec; não pode emitir `REQ-###`/`AC-###.#`.
+3. **Evidência continua do `agentic verify`.** Skill relatando "testes passaram" não é evidência.
+
+> **Colisão de nome resolvida:** `/grill-me` é a skill de entrevista do pacote. A sondagem determinística + registro de ADR do framework passou a ser `/agentic-grill` (CLI: `agentic grill`). As duas compõem — a CLI produz o conjunto de perguntas, a skill conduz a conversa.
+
+---
+
+### Modo de execução
+
+`providers.yaml → execution.mode`:
+
+- **`delegated`** (padrão): grava os pacotes de prompt em `.agentic/execution/inbox/` e espera `agentic report`. É o modo usado por Claude Code / Antigravity / Codex.
+- **`command`**: entrega cada tarefa a um comando configurado; o exit code vira o resultado da tarefa.
+
+```yaml
+execution:
+  engine: ruflo
+  mode: command
+  command: 'claude -p "$(cat {{prompt_file}})"'   # {{contract_file}}, {{task_id}}, {{domain}}
+```
+
+---
+
+## Estrutura de `.agentic/`
 
 ```text
 .agentic/
-├── orchestrator/      # Configurações centrais YAML (workflow, state-machine, policies, routing, providers, complexity, gates)
-├── schemas/           # Schemas JSON formais de validação (work-package, task, verification, run, requirement-closure)
-├── state/             # Estado observado real (observed-state.json), estado declarado e reconciliado
-├── planning/          # Pacotes de trabalho ativos (current-work-package.yaml) e histórico
-├── specs/             # Especificações planejadas e As-Built geradas pós-verificação (planned/, as-built/)
-├── tasks/             # DAG compilada (dag.json) e histórico de tarefas
-├── execution/         # Descritor do run ativo (current-run.json) e logs de execução
-├── verification/      # Relatórios de verificação e matriz de fechamento (requirement-matrix.json)
-├── reconciliation/    # Regras e relatórios de reconciliação de estado
-├── prompts/           # Prompts padronizados de papéis (Observer, Reconciler, Reviewer, Verifier, Task-Compiler, etc.)
-├── templates/         # Modelos estruturados de pacotes de trabalho, tarefas e remediação
-└── audit/             # Stream append-only de auditoria com hash SHA-256 (events.jsonl)
+├── orchestrator/      # workflow, state-machine, policies, gates, routing, providers, complexity, evidence, skills + schemas
+├── registry/          # ids.json — alocação sequencial de REQ/SPEC/ADR/TASK/RUN  [compartilhado]
+├── state/             # observed-state, declared-state, reconciled-state, diff   [local, exceto declared]
+├── planning/          # current-work-package.yaml + histórico                     [compartilhado]
+├── specs/             # planned/ (contratos), decisions/ (ADR), as-built/         [compartilhado]
+├── tasks/             # dag.json + contratos de tarefa
+├── execution/         # inbox/ (pacotes de prompt), results/ (reports), runs/     [local]
+├── verification/      # requirement-matrix.json [compartilhado] + evidence/ e reports/ [local]
+├── gates/             # solicitações de human gate e suas decisões                [compartilhado]
+├── team/leases/       # reivindicações ativas de fase/tarefa                       [local]
+├── reconciliation/    # regras e relatórios
+├── prompts/           # briefings BMAD e prompts de papel
+├── templates/         # modelos de work package, tarefa e remediação
+└── audit/             # events.jsonl — cadeia de hash SHA-256, append-only        [compartilhado, merge=union]
 ```
 
 ---
 
-## 🛡️ Suíte de Testes e Qualidade
+## Configuração de evidência
 
-O framework possui **100% de cobertura de testes** em todos os seus módulos:
+`.agentic/orchestrator/evidence.yaml` define como a evidência é produzida:
 
-```bash
-npm test
+```yaml
+evidence:
+  test_command: ""            # vazio = autodetecta npm/pytest/go/cargo/mvn
+  timeout_ms: 900000
+  output_tail_chars: 4000     # a saída completa é sempre hasheada (SHA-256)
+  require_clean_tree: false
+  run_tests_on_observe: false # quando false, observe reporta `pending` (não medido)
 ```
 
-```text
- ✓ tests/recovery.test.ts (1 test)
- ✓ tests/task-compiler.test.ts (4 tests)
- ✓ tests/as-built.test.ts (1 test)
- ✓ tests/requirement-closure.test.ts (2 tests)
- ✓ tests/complexity-routing.test.ts (5 tests)
- ✓ tests/remediation-loop.test.ts (2 tests)
- ✓ tests/state-machine.test.ts (5 tests)
- ✓ tests/doctor.test.ts (1 test)
- ✓ tests/observer-reconciler.test.ts (3 tests)
- ✓ tests/scaffolder.test.ts (1 test)
- ✓ tests/orchestrator-e2e.test.ts (1 test)
- ✓ tests/setup-orchestrator.test.ts (2 tests)
- ✓ tests/prompt-orchestrator.test.ts (2 tests)
+---
 
- Test Files  13 passed (13)
-      Tests  30 passed (30)
+## Desenvolvimento
+
+```bash
+npm test          # 119 testes
+npm run build
+npm run doctor
 ```

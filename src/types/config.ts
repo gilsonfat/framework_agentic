@@ -20,6 +20,8 @@ export interface StateMachineStateTransition {
   needs_human?: string;
   no_work?: string;
   no_more_work?: string;
+  awaiting_agent?: string;
+  blocked_by_gate?: string;
   repeated_failure?: string;
   approved?: string;
   rejected?: string;
@@ -95,6 +97,10 @@ export interface ProviderEntry {
   fallback?: string;
   fresh_context?: boolean;
   auto_select?: boolean;
+  /** Execution provider only: 'delegated' (hand prompt packs to an agent) or 'command'. */
+  mode?: 'delegated' | 'command';
+  /** Execution provider in `command` mode: shell template with {{prompt_file}} placeholders. */
+  command?: string;
 }
 
 export interface ProvidersConfig {

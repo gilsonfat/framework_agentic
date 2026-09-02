@@ -1,21 +1,38 @@
-# /agentic Slash Command
+# /agentic - Governed Delivery
 
-Execute the complete **Agentic SDLC Orchestration Cycle** for the user's prompt:
+Deliver `$*` through the Agentic SDLC cycle. The CLI structures and enforces; you implement.
 
-```bash
-agentic prompt "$*"
-```
+## Protocol
 
-Or execute the 12-step pipeline:
-1. Observe repository state (`git status`, tests, schemas).
-2. Reconcile observed state with declared state (`Observed State > Declared State`).
-3. Plan milestone/phase work package with GSD.
-4. Specify contracts (`REQ-###`, `AC-###.#`) with TLC Spec-Driven.
-5. Compile DAG without cycles or write conflicts.
-6. Orchestrate with Ruflo (XS/S single agent, M small parallel, L/XL swarm).
-7. Implement with Superpowers TDD (Red-Green-Refactor) and systematic debugging.
-8. Review (4 layers including security read-only).
-9. Verify with TLC Fresh Context Verifier (no requirement closed without evidence).
-10. Remediate on failure (up to 3 attempts).
-11. Generate As-Built specification.
-12. Update declared state and re-observe.
+1. **Structure and dispatch**:
+   ```bash
+   agentic prompt "$*"
+   ```
+   - Status `HUMAN_GATE`: stop, report the pending gate, ask the user to run `agentic gate list`.
+   - Status `AWAITING_AGENT`: continue below.
+
+2. **Read the work orders**: `.agentic/execution/inbox/INDEX.md`, then each
+   `.agentic/execution/inbox/<TASK-ID>.md` (acceptance criteria, ADRs, ownership, assumptions).
+
+3. **Observe reality**: locate the real code, tests and config for `$*`. Identify the project's
+   test command. Reality overrides any assumption in the pack.
+
+4. **Implement with SUPERPOWERS (strict TDD and systematic debugging)** - per task, in wave order:
+   - RED: failing test encoding every `AC-###.#`; run the suite, keep the output.
+   - GREEN: minimum implementation.
+   - REFACTOR: clean up, keep types strict.
+   - Stay inside the task's WRITE paths. One atomic commit per task.
+
+5. **Report each task**:
+   ```bash
+   agentic report <TASK-ID> --status completed --files "<changed>" --tests "<tests>" --commit <sha>
+   ```
+
+6. **Close with evidence**:
+   ```bash
+   agentic verify
+   ```
+
+7. **Summarize**: changes, ADRs applied, evidence id and counters, open assumptions or gates.
+
+Never declare success on a `BLOCKED`, `FAIL` or `REMEDIATING` outcome.

@@ -1,8 +1,23 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 import { AsBuiltGenerator } from '../src/core/as-built.js';
 
 describe('AsBuiltGenerator', () => {
-  const generator = new AsBuiltGenerator();
+  let tempDir: string;
+  let generator: AsBuiltGenerator;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentic-asbuilt-'));
+    generator = new AsBuiltGenerator(tempDir);
+  });
+
+  afterEach(() => {
+    if (fs.existsSync(tempDir)) {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 
   it('should generate as-built specification markdown from execution evidence', () => {
     const doc = generator.generate({
@@ -52,5 +67,9 @@ describe('AsBuiltGenerator', () => {
     expect(doc).toContain('VER-001');
     expect(doc).toContain('REQ-001');
     expect(doc).toContain('src/core/example.ts');
+
+    // The document is persisted under the phase, inside the target project only.
+    const asBuiltFile = path.join(tempDir, '.agentic', 'specs', 'as-built', 'P01', 'RUN-TEST-AB.md');
+    expect(fs.existsSync(asBuiltFile)).toBe(true);
   });
 });

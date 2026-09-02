@@ -1,12 +1,15 @@
 import fs from 'fs';
 import path from 'path';
 import { ObservedState, DeclaredState, ReconciledState, ReconciledItem } from '../types/state.js';
+import { AuditLogger } from './audit-logger.js';
 
 export class Reconciler {
   private projectRoot: string;
+  private auditLogger: AuditLogger;
 
-  constructor(projectRoot: string = process.cwd()) {
+  constructor(projectRoot: string = process.cwd(), auditLogger?: AuditLogger) {
     this.projectRoot = path.resolve(projectRoot);
+    this.auditLogger = auditLogger || new AuditLogger(this.projectRoot);
   }
 
   public reconcile(runId: string, observed: ObservedState, declared?: DeclaredState): ReconciledState {
@@ -86,6 +89,69 @@ export class Reconciler {
       }
     }
 
+    // Reconcile Tasks (previously declared tasks were parsed and then ignored).
+    for (const [taskId, declTask] of Object.entries(declaredState.tasks || {})) {
+      const obsTask = observed.tasks[taskId];
+      const declaredStatus = declTask.status.toLowerCase();
+
+      if (!obsTask) {
+        (declaredStatus === 'completed' || declaredStatus === 'done' ? mismatches : unknowns).push({
+          id: taskId,
+          type: 'task',
+          declared: declaredStatus,
+          observed: 'not_observed',
+          result: declaredStatus === 'completed' || declaredStatus === 'done' ? 'MISMATCH' : 'UNKNOWN',
+          evidence: ['Task declared but absent from the compiled DAG and task results.'],
+        });
+        continue;
+      }
+
+      if (declaredStatus === obsTask.status) {
+        matches.push({
+          id: taskId,
+          type: 'task',
+          declared: declaredStatus,
+          observed: obsTask.status,
+          result: 'MATCH',
+          evidence: ['Declared and observed task statuses match.'],
+        });
+      } else if (declaredStatus === 'completed' || declaredStatus === 'done') {
+        mismatches.push({
+          id: taskId,
+          type: 'task',
+          declared: declaredStatus,
+          observed: obsTask.status,
+          result: 'MISMATCH',
+          evidence: [`Task declared complete but observed status is ${obsTask.status}.`],
+        });
+      } else {
+        partials.push({
+          id: taskId,
+          type: 'task',
+          declared: declaredStatus,
+          observed: obsTask.status,
+          result: 'PARTIAL',
+          evidence: ['Task progressed beyond its declared status.'],
+        });
+      }
+    }
+
+    // Reconcile the measured test suite against the declaration of health.
+    if (observed.tests.status === 'fail') {
+      mismatches.push({
+        id: 'TEST-SUITE',
+        type: 'test',
+        declared: 'green',
+        observed: `fail (${observed.tests.failed} failing)`,
+        result: 'MISMATCH',
+        evidence: [
+          observed.tests.evidence_id
+            ? `Executed evidence ${observed.tests.evidence_id}: ${observed.tests.command}`
+            : 'Test suite reported failures.',
+        ],
+      });
+    }
+
     const overallStatus =
       mismatches.length > 0 ? 'MISMATCH' : partials.length > 0 ? 'PARTIAL' : 'MATCH';
 
@@ -100,6 +166,60 @@ export class Reconciler {
 
     this.saveReconciliationArtifacts(runId, reconciled);
     return reconciled;
+  }
+
+  /**
+   * Rewrites the declared state from observed truth ("Observed State > Declared
+   * State" applied, not just reported). Step 12 of the cycle previously emitted
+   * an audit event and changed nothing, so the loop could never converge and the
+   * same mismatches were re-reported on every run.
+   */
+  public syncDeclaredState(
+    runId: string,
+    observed: ObservedState,
+    context: { milestone?: string; phase?: string } = {}
+  ): DeclaredState {
+    const current = this.loadDeclaredState();
+
+    const requirements: DeclaredState['requirements'] = { ...current.requirements };
+    for (const [id, obs] of Object.entries(observed.requirements)) {
+      requirements[id] = {
+        ...(requirements[id] || {}),
+        status: obs.status,
+      };
+    }
+
+    const tasks: DeclaredState['tasks'] = { ...current.tasks };
+    for (const [id, obs] of Object.entries(observed.tasks)) {
+      tasks[id] = { ...(tasks[id] || {}), status: obs.status };
+    }
+
+    const pendingRequirements = Object.values(requirements).filter((r) => r.status !== 'done').length;
+
+    const next: DeclaredState = {
+      milestone: context.milestone || current.milestone,
+      phase: context.phase || current.phase,
+      requirements,
+      tasks,
+      status: pendingRequirements === 0 && Object.keys(requirements).length > 0 ? 'complete' : 'in_progress',
+    };
+
+    fs.writeFileSync(
+      path.join(this.projectRoot, '.agentic', 'state', 'declared-state.json'),
+      JSON.stringify(next, null, 2),
+      'utf8'
+    );
+
+    this.auditLogger.emit(runId, 'DECLARED_STATE_SYNCED', {
+      metadata: {
+        milestone: next.milestone,
+        phase: next.phase,
+        requirements: Object.keys(requirements).length,
+        pending: pendingRequirements,
+      },
+    });
+
+    return next;
   }
 
   private loadDeclaredState(): DeclaredState {

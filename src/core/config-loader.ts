@@ -3,6 +3,8 @@ import path from 'path';
 import YAML from 'yaml';
 import AjvPackage from 'ajv';
 import addFormatsPackage from 'ajv-formats';
+import { DEFAULT_EVIDENCE_CONFIG, EvidenceConfig } from '../types/evidence.js';
+import { DEFAULT_SKILLS_CONFIG, SkillsConfig } from '../types/skills.js';
 import {
   WorkflowConfig,
   StateMachineConfig,
@@ -68,6 +70,27 @@ export class ConfigLoader {
     return { valid: true };
   }
 
+  /**
+   * Skill packs are optional: a project scaffolded before `skills.yaml` existed
+   * (or one that deliberately uses no external packs) falls back to an empty
+   * registry instead of throwing.
+   */
+  public loadSkillsConfig(): SkillsConfig {
+    const fullPath = path.join(this.orchestratorDir, 'skills.yaml');
+    if (!fs.existsSync(fullPath)) {
+      return DEFAULT_SKILLS_CONFIG;
+    }
+    try {
+      const parsed = YAML.parse(fs.readFileSync(fullPath, 'utf8')) as Partial<SkillsConfig> | null;
+      return {
+        version: parsed?.version || DEFAULT_SKILLS_CONFIG.version,
+        packs: parsed?.packs || {},
+      };
+    } catch {
+      return DEFAULT_SKILLS_CONFIG;
+    }
+  }
+
   public loadWorkflowConfig(): WorkflowConfig {
     return this.loadYaml<WorkflowConfig>('workflow.yaml');
   }
@@ -94,5 +117,26 @@ export class ConfigLoader {
 
   public loadProvidersConfig(): ProvidersConfig {
     return this.loadYaml<ProvidersConfig>('providers.yaml');
+  }
+
+  /**
+   * Evidence configuration is optional: projects scaffolded before it existed must
+   * keep working, so a missing or partial file falls back to the built-in defaults
+   * instead of throwing.
+   */
+  public loadEvidenceConfig(): EvidenceConfig {
+    const fullPath = path.join(this.orchestratorDir, 'evidence.yaml');
+    if (!fs.existsSync(fullPath)) {
+      return DEFAULT_EVIDENCE_CONFIG;
+    }
+    try {
+      const parsed = YAML.parse(fs.readFileSync(fullPath, 'utf8')) as Partial<EvidenceConfig> | null;
+      return {
+        version: parsed?.version || DEFAULT_EVIDENCE_CONFIG.version,
+        evidence: { ...DEFAULT_EVIDENCE_CONFIG.evidence, ...(parsed?.evidence || {}) },
+      };
+    } catch {
+      return DEFAULT_EVIDENCE_CONFIG;
+    }
   }
 }

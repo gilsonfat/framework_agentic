@@ -1,9 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 import { RemediationEngine } from '../src/core/remediation.js';
+import { Scaffolder } from '../src/core/scaffolder.js';
 import { VerificationReport } from '../src/types/verification.js';
 
 describe('RemediationEngine', () => {
-  const engine = new RemediationEngine();
+  let tempDir: string;
+  let engine: RemediationEngine;
 
   const failedReport: VerificationReport = {
     verification_id: 'VER-FAIL-01',
@@ -27,21 +32,57 @@ describe('RemediationEngine', () => {
     blocking_findings: ['Criteria AC-017.2 failed'],
   };
 
-  it('should generate remediation package on verification failure', () => {
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentic-remediation-'));
+    new Scaffolder().scaffold(tempDir, { autoObserve: false });
+    engine = new RemediationEngine(tempDir);
+  });
+
+  afterEach(() => {
+    if (fs.existsSync(tempDir)) {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('should generate a remediation package on verification failure', () => {
     const { packages, escalateToHumanGate } = engine.createRemediationPackages(failedReport);
+
     expect(packages.length).toBe(1);
     expect(packages[0].requirement).toBe('REQ-017');
     expect(packages[0].attempt).toBe(1);
     expect(escalateToHumanGate).toBe(false);
+    expect(
+      fs.existsSync(path.join(tempDir, '.agentic', 'execution', 'work-packages', 'remediation-REQ-017-1.yaml'))
+    ).toBe(true);
   });
 
-  it('should track retry attempts and escalate to human gate after max attempts (3)', () => {
-    // Attempt 2
+  it('should escalate to a human gate after the configured maximum attempts', () => {
     engine.createRemediationPackages(failedReport);
-    // Attempt 3
     engine.createRemediationPackages(failedReport);
-    // Attempt 4 -> exceeds 3
+    engine.createRemediationPackages(failedReport);
     const result = engine.createRemediationPackages(failedReport);
+
     expect(result.escalateToHumanGate).toBe(true);
+    expect(engine.isExhausted('REQ-017')).toBe(true);
+  });
+
+  it('persists the attempt budget across processes so a new run cannot reset it', () => {
+    engine.createRemediationPackages(failedReport);
+    engine.createRemediationPackages(failedReport);
+
+    // A brand new engine instance (as in a fresh CLI invocation) must remember.
+    const revived = new RemediationEngine(tempDir);
+    expect(revived.getAttemptCount('ANY-RUN', 'REQ-017')).toBe(2);
+
+    const next = revived.createRemediationPackages({ ...failedReport, run_id: 'RUN-DIFFERENT' });
+    expect(next.packages[0].attempt).toBe(3);
+  });
+
+  it('clears the budget once the requirement verifies green', () => {
+    engine.createRemediationPackages(failedReport);
+    engine.resetAttempts(['REQ-017']);
+
+    expect(engine.getAttemptCount('RUN-TEST-REM', 'REQ-017')).toBe(0);
+    expect(engine.isExhausted('REQ-017')).toBe(false);
   });
 });
