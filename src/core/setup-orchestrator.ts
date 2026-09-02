@@ -30,6 +30,16 @@ export interface SetupOptions {
   enableHooks?: boolean;
   /** Skip the closing "what to do next" block. */
   quiet?: boolean;
+  /** Custom test execution command (e.g. pnpm test, vitest run). */
+  testCommand?: string;
+  /** Task execution mode: delegated (default) or command. */
+  executionMode?: 'delegated' | 'command';
+  /** Grill-Me architectural interrogation mode: adaptive (default) or strict. */
+  grillMode?: 'adaptive' | 'strict';
+  /** Selected skill packs to enable. */
+  skills?: string[];
+  /** Run interactive setup wizard. */
+  interactive?: boolean;
 }
 
 export interface SetupResult {
@@ -102,12 +112,16 @@ export class SetupOrchestrator {
       );
     }
 
-    // 3. Customize providers.yaml in target project based on user choice
+    // 3. Customize providers.yaml, evidence.yaml, skills.yaml, and preferences.yaml
     this.customizeProvidersConfig(target, {
       enableGsd,
       enableTlc,
       enableRuflo,
       processEngine,
+      executionMode: options.executionMode,
+      testCommand: options.testCommand,
+      grillMode: options.grillMode,
+      skills: options.skills,
     });
 
     // 4. Wire every AI product to the same workflow.
@@ -231,66 +245,129 @@ export class SetupOrchestrator {
 
   private customizeProvidersConfig(
     targetDir: string,
-    cfg: { enableGsd: boolean; enableTlc: boolean; enableRuflo: boolean; processEngine: string }
+    cfg: {
+      enableGsd: boolean;
+      enableTlc: boolean;
+      enableRuflo: boolean;
+      processEngine: string;
+      executionMode?: 'delegated' | 'command';
+      testCommand?: string;
+      grillMode?: 'adaptive' | 'strict';
+      skills?: string[];
+    }
   ): void {
     const providersPath = path.join(targetDir, '.agentic', 'orchestrator', 'providers.yaml');
-    if (!fs.existsSync(providersPath)) return;
+    if (fs.existsSync(providersPath)) {
+      try {
+        const parsed = YAML.parse(fs.readFileSync(providersPath, 'utf8')) || { version: 1, providers: {} };
+        if (!parsed.providers) parsed.providers = {};
 
+        parsed.providers.project_planner = {
+          engine: cfg.enableGsd ? 'gsd' : 'native-planner',
+          required: true,
+        };
+
+        parsed.providers.bmad = {
+          engine: 'bmad-method',
+          required: true,
+        };
+
+        parsed.providers.spec_kit = {
+          engine: 'github-spec-kit',
+          required: true,
+        };
+
+        parsed.providers.specification = {
+          engine: cfg.enableTlc ? 'tlc-spec-driven' : 'native-spec',
+          required: true,
+        };
+
+        parsed.providers.execution = {
+          engine: cfg.enableRuflo ? 'ruflo' : 'native-swarm',
+          required: false,
+          fallback: 'native-agent',
+          mode: cfg.executionMode || 'delegated',
+        };
+
+        parsed.providers.process = {
+          engine: cfg.processEngine,
+          required: true,
+        };
+
+        parsed.providers.domain_skills = {
+          engine: 'mattpocock-skills',
+          auto_select: true,
+          required: false,
+        };
+
+        parsed.providers.verification = {
+          engine: cfg.enableTlc ? 'tlc-spec-driven' : 'native-verifier',
+          fresh_context: true,
+          required: true,
+        };
+
+        fs.writeFileSync(providersPath, YAML.stringify(parsed), 'utf8');
+        console.log(
+          `+ Configured providers.yaml (Process: ${cfg.processEngine}, Planner: ${
+            cfg.enableGsd ? 'gsd' : 'native'
+          }, BMAD: bmad-method, SpecKit: github-spec-kit, Execution: ${cfg.executionMode || 'delegated'})`
+        );
+      } catch (e) {
+        console.warn('! Note: Could not update providers.yaml:', (e as Error).message);
+      }
+    }
+
+    // 2. Custom test command in evidence.yaml
+    if (cfg.testCommand) {
+      const evidencePath = path.join(targetDir, '.agentic', 'orchestrator', 'evidence.yaml');
+      if (fs.existsSync(evidencePath)) {
+        try {
+          const evidenceParsed = YAML.parse(fs.readFileSync(evidencePath, 'utf8')) || {};
+          if (!evidenceParsed.evidence) evidenceParsed.evidence = {};
+          evidenceParsed.evidence.test_command = cfg.testCommand;
+          fs.writeFileSync(evidencePath, YAML.stringify(evidenceParsed), 'utf8');
+          console.log(`+ Configured evidence.yaml (test_command: "${cfg.testCommand}")`);
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    // 3. Custom skill packs in skills.yaml
+    if (cfg.skills && cfg.skills.length > 0) {
+      const skillsPath = path.join(targetDir, '.agentic', 'orchestrator', 'skills.yaml');
+      if (fs.existsSync(skillsPath)) {
+        try {
+          const skillsParsed = YAML.parse(fs.readFileSync(skillsPath, 'utf8')) || { version: 1, packs: {} };
+          if (skillsParsed.packs) {
+            for (const [packId, pack] of Object.entries(skillsParsed.packs as Record<string, any>)) {
+              pack.enabled = cfg.skills.includes(packId);
+            }
+            fs.writeFileSync(skillsPath, YAML.stringify(skillsParsed), 'utf8');
+            console.log(`+ Configured skills.yaml (Active packs: ${cfg.skills.join(', ')})`);
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    // 4. Save unified preferences.yaml
+    const prefPath = path.join(targetDir, '.agentic', 'orchestrator', 'preferences.yaml');
     try {
-      const parsed = YAML.parse(fs.readFileSync(providersPath, 'utf8')) || { version: 1, providers: {} };
-      if (!parsed.providers) parsed.providers = {};
-
-      parsed.providers.project_planner = {
-        engine: cfg.enableGsd ? 'gsd' : 'native-planner',
-        required: true,
+      const preferences = {
+        version: 1,
+        process_engine: cfg.processEngine,
+        test_command: cfg.testCommand || 'npm test',
+        execution_mode: cfg.executionMode || 'delegated',
+        grill_mode: cfg.grillMode || 'adaptive',
+        skills: cfg.skills || ['mattpocock'],
+        configured_at: new Date().toISOString(),
       };
-
-      parsed.providers.bmad = {
-        engine: 'bmad-method',
-        required: true,
-      };
-
-      parsed.providers.spec_kit = {
-        engine: 'github-spec-kit',
-        required: true,
-      };
-
-      parsed.providers.specification = {
-        engine: cfg.enableTlc ? 'tlc-spec-driven' : 'native-spec',
-        required: true,
-      };
-
-      parsed.providers.execution = {
-        engine: cfg.enableRuflo ? 'ruflo' : 'native-swarm',
-        required: false,
-        fallback: 'native-agent',
-        // Delegated: the orchestrator hands prompt packs to the coding agent and
-        // waits for reported results. Switch to `command` with a `command:`
-        // template to drive an agent CLI directly.
-        mode: 'delegated',
-      };
-
-      parsed.providers.process = {
-        engine: cfg.processEngine,
-        required: true,
-      };
-
-      parsed.providers.domain_skills = {
-        engine: 'mattpocock-skills',
-        auto_select: true,
-        required: false,
-      };
-
-      parsed.providers.verification = {
-        engine: cfg.enableTlc ? 'tlc-spec-driven' : 'native-verifier',
-        fresh_context: true,
-        required: true,
-      };
-
-      fs.writeFileSync(providersPath, YAML.stringify(parsed), 'utf8');
-      console.log(`+ Configured providers.yaml (Process: ${cfg.processEngine}, Planner: ${cfg.enableGsd ? 'gsd' : 'native'}, BMAD: bmad-method, SpecKit: github-spec-kit)`);
-    } catch (e) {
-      console.warn('! Note: Could not update providers.yaml:', (e as Error).message);
+      fs.writeFileSync(prefPath, YAML.stringify(preferences), 'utf8');
+      console.log(`+ Saved custom preferences: .agentic/orchestrator/preferences.yaml`);
+    } catch {
+      // ignore
     }
   }
 

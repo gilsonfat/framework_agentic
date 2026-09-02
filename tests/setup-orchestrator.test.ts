@@ -69,4 +69,36 @@ describe('SetupOrchestrator', () => {
 
     expect(result.doctorReport.ready).toBe(true);
   });
+
+  it('should persist granular preferences (testCommand, executionMode, grillMode, skills, preferences.yaml)', () => {
+    const setup = new SetupOrchestrator(tempDir);
+    const result = setup.runFullSetup({
+      installEngines: false,
+      testCommand: 'pnpm vitest run',
+      executionMode: 'command',
+      grillMode: 'strict',
+      skills: ['mattpocock'],
+    });
+
+    expect(result.scaffoldSuccess).toBe(true);
+
+    // 1. providers.yaml execution mode
+    const providersPath = path.join(tempDir, '.agentic', 'orchestrator', 'providers.yaml');
+    const providersParsed = YAML.parse(fs.readFileSync(providersPath, 'utf8'));
+    expect(providersParsed.providers.execution.mode).toBe('command');
+
+    // 2. evidence.yaml test command
+    const evidencePath = path.join(tempDir, '.agentic', 'orchestrator', 'evidence.yaml');
+    const evidenceParsed = YAML.parse(fs.readFileSync(evidencePath, 'utf8'));
+    expect(evidenceParsed.evidence.test_command).toBe('pnpm vitest run');
+
+    // 3. preferences.yaml
+    const prefPath = path.join(tempDir, '.agentic', 'orchestrator', 'preferences.yaml');
+    expect(fs.existsSync(prefPath)).toBe(true);
+    const prefParsed = YAML.parse(fs.readFileSync(prefPath, 'utf8'));
+    expect(prefParsed.test_command).toBe('pnpm vitest run');
+    expect(prefParsed.execution_mode).toBe('command');
+    expect(prefParsed.grill_mode).toBe('strict');
+    expect(prefParsed.skills).toEqual(['mattpocock']);
+  });
 });

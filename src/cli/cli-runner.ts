@@ -8,7 +8,8 @@ import { Observer } from '../core/observer.js';
 import { Reconciler } from '../core/reconciler.js';
 import { RecoveryEngine } from '../core/recovery.js';
 import { Scaffolder } from '../core/scaffolder.js';
-import { SetupOrchestrator } from '../core/setup-orchestrator.js';
+import { SetupOrchestrator, SetupOptions } from '../core/setup-orchestrator.js';
+import { promptInteractiveSetup } from './interactive-setup.js';
 import { PromptOrchestrator } from '../core/prompt-orchestrator.js';
 import { AgentBridge } from '../core/agent-bridge.js';
 import { EvidenceCollector } from '../core/evidence-collector.js';
@@ -71,13 +72,13 @@ export function createCli(projectRoot: string = process.cwd()): Command {
     .version('1.1.0');
 
   // ---------------------------------------------------------------- setup ---
-  const runSetup = (options: Record<string, unknown>) => {
-    const targetDir = resolveTarget(options as { target?: string }, projectRoot);
+  const runSetup = async (options: Record<string, unknown>) => {
+    let targetDir = resolveTarget(options as { target?: string }, projectRoot);
     const processEngine = options.withEcc
       ? 'ecc'
       : ((options.process as 'superpowers' | 'ecc' | 'native') || 'superpowers');
 
-    new SetupOrchestrator(targetDir).runFullSetup({
+    let setupOptions: SetupOptions = {
       targetDir,
       installEngines: Boolean(options.all),
       force: Boolean(options.force),
@@ -89,12 +90,24 @@ export function createCli(projectRoot: string = process.cwd()): Command {
       products: parseProducts(options.agents as string | undefined),
       enablePermissions: !options.withoutPermissions,
       enableHooks: !options.withoutHooks,
-    });
+      testCommand: options.testCommand as string | undefined,
+      executionMode: options.executionMode as 'delegated' | 'command' | undefined,
+      grillMode: options.grillMode as 'adaptive' | 'strict' | undefined,
+      skills: options.skills ? (options.skills as string).split(',').map((s) => s.trim()) : undefined,
+    };
+
+    if (options.interactive) {
+      setupOptions = await promptInteractiveSetup(setupOptions);
+      targetDir = setupOptions.targetDir || targetDir;
+    }
+
+    new SetupOrchestrator(targetDir).runFullSetup(setupOptions);
   };
 
   const withSetupOptions = (command: Command) =>
     command
       .option('-t, --target <path>', 'Target project directory', projectRoot)
+      .option('-i, --interactive', 'Run interactive setup wizard to configure preferences and skills', false)
       .option(
         '-a, --agents <list>',
         `AI products to wire: all | ${ALL_PRODUCT_IDS.join(' | ')} (comma separated)`,
@@ -109,7 +122,11 @@ export function createCli(projectRoot: string = process.cwd()): Command {
       .option('--without-ruflo', 'Disable the Ruflo execution provider', false)
       .option('--without-rules', 'Do not write any AI instruction file', false)
       .option('--without-permissions', 'Do not pre-approve agentic commands in .claude/settings.json', false)
-      .option('--without-hooks', 'Do not add the Claude Code SessionStart hook', false);
+      .option('--without-hooks', 'Do not add the Claude Code SessionStart hook', false)
+      .option('--test-command <cmd>', 'Custom test command (e.g. npm test, pnpm test, vitest)')
+      .option('--execution-mode <mode>', 'Task execution mode: delegated | command')
+      .option('--grill-mode <mode>', 'Grill-Me interrogation mode: adaptive | strict')
+      .option('--skills <list>', 'Enabled skill packs (comma separated, e.g. mattpocock,ecc)');
 
   withSetupOptions(
     program
