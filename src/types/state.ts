@@ -34,6 +34,9 @@ export interface ProjectObservedState {
   stack: string[];
   scripts: Record<string, string>;
   migrations: string[];
+  is_multi_module?: boolean;
+  modules?: string[];
+  has_planning?: boolean;
 }
 
 export interface TestsObservedState {

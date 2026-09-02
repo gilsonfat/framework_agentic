@@ -3,6 +3,7 @@ import path from 'path';
 import { execSync } from 'child_process';
 import YAML from 'yaml';
 import { Scaffolder } from './scaffolder.js';
+import { PlanningIngestor } from './planning-ingestor.js';
 import { ProviderInstaller } from './provider-installer.js';
 import { Observer } from './observer.js';
 import { Reconciler } from './reconciler.js';
@@ -91,6 +92,15 @@ export class SetupOrchestrator {
       autoObserve: false,
     });
     console.log('+ Complete .agentic architecture scaffolded.');
+
+    // Ingest and report existing planning (ROADMAP.md, STATE.md, REQUIREMENTS.md)
+    const planningIngestor = new PlanningIngestor(target);
+    const ingested = planningIngestor.ingest();
+    if (ingested.executedPhases.length > 0 || ingested.pendingPhases.length > 0) {
+      console.log(
+        `+ Planning Ingestion: ${ingested.executedPhases.length} executed phase(s), ${ingested.pendingPhases.length} pending phase(s), milestone=${ingested.currentMilestone}, phase=${ingested.currentPhase}`
+      );
+    }
 
     // 3. Customize providers.yaml in target project based on user choice
     this.customizeProvidersConfig(target, {

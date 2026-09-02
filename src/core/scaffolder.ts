@@ -4,6 +4,8 @@ import { fileURLToPath } from 'url';
 import { Observer } from './observer.js';
 import { Reconciler } from './reconciler.js';
 import { TeamCoordinator } from './team.js';
+import { ModuleDetector } from './module-detector.js';
+import { PlanningIngestor } from './planning-ingestor.js';
 
 export interface ScaffoldOptions {
   force?: boolean;
@@ -167,6 +169,30 @@ export class Scaffolder {
     const policy = team.ensureCollaborationPolicy({ force: options.force });
     createdFiles.push(...policy.written);
     skippedFiles.push(...policy.skipped);
+
+    // Modular .planning and scope scaffolding
+    const moduleDetector = new ModuleDetector(targetProjectRoot);
+    const modularPlanningResult = moduleDetector.scaffoldModularPlanning();
+    for (const item of modularPlanningResult.created) {
+      if (item.endsWith('/')) {
+        createdDirectories.push(item);
+      } else {
+        createdFiles.push(item);
+      }
+    }
+    for (const item of modularPlanningResult.preserved) {
+      skippedFiles.push(item);
+    }
+
+    // Ingest existing planning (ROADMAP.md, STATE.md, REQUIREMENTS.md, modulos/)
+    const planningIngestor = new PlanningIngestor(targetProjectRoot);
+    const ingested = planningIngestor.ingest();
+    const applyResult = planningIngestor.applyPlanningState(ingested);
+    for (const file of applyResult.updatedRoadmaps) {
+      if (!createdFiles.includes(file)) {
+        createdFiles.push(file);
+      }
+    }
 
     // Auto-observe and reconcile if requested or on new bootstrap
     if (options.autoObserve) {

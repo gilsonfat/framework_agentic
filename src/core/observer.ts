@@ -5,6 +5,7 @@ import { ObservedState } from '../types/state.js';
 import { EvidenceRecord } from '../types/evidence.js';
 import { ConfigLoader } from './config-loader.js';
 import { EvidenceCollector } from './evidence-collector.js';
+import { ModuleDetector } from './module-detector.js';
 
 export interface ObserveOptions {
   /**
@@ -140,7 +141,18 @@ export class Observer {
       }
     }
 
-    return { name, stack: Array.from(new Set(stack)), scripts, migrations };
+    const moduleDetector = new ModuleDetector(this.projectRoot);
+    const structure = moduleDetector.detect();
+
+    return {
+      name,
+      stack: Array.from(new Set(stack)),
+      scripts,
+      migrations,
+      is_multi_module: structure.isMultiModule,
+      modules: structure.modules.map((m) => m.name),
+      has_planning: structure.hasRootPlanning,
+    };
   }
 
   /**

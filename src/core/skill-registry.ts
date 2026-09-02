@@ -21,14 +21,24 @@ import { ConfigLoader } from './config-loader.js';
  *    Grill-Me probes, Spec Kit contract, evidence-gated verification) runs either
  *    way, so a teammate without the pack installed is degraded, never blocked.
  */
+export interface SkillRegistryOptions {
+  includeHome?: boolean;
+}
+
 export class SkillRegistry {
   private projectRoot: string;
   private config: SkillsConfig;
+  private includeHome: boolean;
   private detectionCache = new Map<string, string | undefined>();
 
-  constructor(projectRoot: string = process.cwd(), configLoader?: ConfigLoader) {
+  constructor(
+    projectRoot: string = process.cwd(),
+    configLoader?: ConfigLoader,
+    options: SkillRegistryOptions = {}
+  ) {
     this.projectRoot = path.resolve(projectRoot);
     this.config = (configLoader || new ConfigLoader(this.projectRoot)).loadSkillsConfig();
+    this.includeHome = options.includeHome !== false;
   }
 
   public listPacks(): SkillPackStatus[] {
@@ -178,7 +188,8 @@ export class SkillRegistry {
   }
 
   private resolveDetectionPath(candidate: string): string | undefined {
-    const roots = [this.projectRoot, os.homedir()];
+    const allowHome = this.includeHome && process.env.AGENTIC_TEST_ISOLATION !== 'true';
+    const roots = allowHome ? [this.projectRoot, os.homedir()] : [this.projectRoot];
 
     for (const root of roots) {
       const full = path.resolve(root, candidate);

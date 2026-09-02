@@ -8,6 +8,7 @@ import { SpecEngine } from './spec-engine.js';
 import { IdRegistry } from './id-registry.js';
 import { TeamCoordinator } from './team.js';
 import { SkillRegistry } from './skill-registry.js';
+import { ModuleDetector } from './module-detector.js';
 import { ComplexityLevel } from '../types/config.js';
 import { WorkPackage } from '../types/task.js';
 import { RunDescriptor } from '../types/run.js';
@@ -148,13 +149,23 @@ export class PromptOrchestrator {
     this.printSkillHint('specify', domain, 'enrich this contract (keep the registry ids)');
 
     // ---- Work package -----------------------------------------------------
+    const moduleDetector = new ModuleDetector(this.projectRoot);
+    const structure = moduleDetector.detect();
+    const targetModule = structure.modules.find(
+      (m) => m.name.toLowerCase() === domain.toLowerCase() || trimmedPrompt.toLowerCase().includes(m.name.toLowerCase())
+    );
+
+    const scopeIncludes = targetModule
+      ? [`${targetModule.relativePath}/**`, ...bmadBriefing.business.scope_in]
+      : bmadBriefing.business.scope_in;
+
     const workPackage: WorkPackage = {
       run_id: runId,
       milestone: 'M01',
       phase: phaseId,
       goal: bmadBriefing.title,
       scope: {
-        include: bmadBriefing.business.scope_in,
+        include: scopeIncludes,
         exclude: bmadBriefing.business.scope_out,
       },
       requirements: [reqId],
@@ -166,7 +177,11 @@ export class PromptOrchestrator {
       human_gate_required: complexity === 'XL' || domain === 'security',
     };
     this.planner.saveWorkPackage(workPackage);
-    console.log(`\n+ Work package ${phaseId} [${complexity}] domain=${domain} requirement=${reqId}`);
+    console.log(
+      `\n+ Work package ${phaseId} [${complexity}] domain=${domain} requirement=${reqId}${
+        targetModule ? ` (module: ${targetModule.name} -> ${targetModule.relativePath}/**)` : ''
+      }`
+    );
 
     // ---- Delivery cycle ---------------------------------------------------
     const runResult = await this.orchestrator.runCycle({

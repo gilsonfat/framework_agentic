@@ -151,6 +151,19 @@ export class BmadEngine {
       business_rules.push('Payload signatures (HMAC / webhook secret) must be validated before processing');
     }
 
+    // Ingest .planning scope if present
+    const moduleScopePath = path.join(this.projectRoot, '.planning', 'modules', domain, 'SCOPE.md');
+    if (fs.existsSync(moduleScopePath)) {
+      business_rules.push(`Strict module isolation: respects write boundaries in .planning/modules/${domain}/SCOPE.md`);
+      scope_in.push(`Must operate strictly within module "${domain}" boundaries`);
+      scope_out.push(`Forbidden: modifying code outside module "${domain}" without cross-module claim`);
+    } else {
+      const rootScopePath = path.join(this.projectRoot, '.planning', 'SCOPE.md');
+      if (fs.existsSync(rootScopePath)) {
+        business_rules.push('Governed by root application scope in .planning/SCOPE.md');
+      }
+    }
+
     return { objective, stakeholders, value_proposition: valueProposition, scope_in, scope_out, business_rules };
   }
 

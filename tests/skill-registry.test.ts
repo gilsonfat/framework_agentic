@@ -22,6 +22,7 @@ describe('SkillRegistry (mattpocock/skills pack)', () => {
   };
 
   beforeEach(() => {
+    process.env.AGENTIC_TEST_ISOLATION = 'true';
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentic-skills-'));
     try {
       execSync('git init', { cwd: tempDir, stdio: 'ignore' });
@@ -32,6 +33,7 @@ describe('SkillRegistry (mattpocock/skills pack)', () => {
   });
 
   afterEach(() => {
+    delete process.env.AGENTIC_TEST_ISOLATION;
     if (fs.existsSync(tempDir)) {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }

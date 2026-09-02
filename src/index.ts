@@ -43,6 +43,8 @@ export * from './core/recovery.js';
 export * from './core/doctor.js';
 export * from './core/status.js';
 export * from './core/scaffolder.js';
+export * from './core/module-detector.js';
+export * from './core/planning-ingestor.js';
 export * from './core/provider-installer.js';
 export * from './core/setup-orchestrator.js';
 export * from './core/rules-templates.js';
