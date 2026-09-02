@@ -39,6 +39,10 @@ export class AuditLogger {
     this.actor = this.resolveActor();
   }
 
+  public getActor(): string {
+    return this.actor;
+  }
+
   public emit(
     runId: string,
     type: AuditEventType,

@@ -78,6 +78,7 @@ ${traceabilityRows || '| None | None | None | None | None | None |'}
 `;
 
     this.saveAsBuilt(input.phase, input.runId, content);
+    this.appendModuleChangelogs(input);
     this.auditLogger.emit(input.runId, 'AS_BUILT_GENERATED', {
       metadata: { phase: input.phase, verificationId: input.verificationReport.verification_id },
     });
@@ -92,5 +93,56 @@ ${traceabilityRows || '| None | None | None | None | None | None |'}
     }
     const filename = path.join(asBuiltDir, `${runId}.md`);
     fs.writeFileSync(filename, content, 'utf8');
+  }
+
+  private appendModuleChangelogs(input: AsBuiltInput): void {
+    const modulesDir = path.join(this.projectRoot, '.planning', 'modules');
+    if (!fs.existsSync(modulesDir)) return;
+
+    const actor = this.auditLogger.getActor();
+    const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 16);
+
+    try {
+      const entries = fs.readdirSync(modulesDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const modName = entry.name;
+        const modFiles = input.filesChanged.filter(
+          (f) =>
+            f.includes(`/${modName}/`) ||
+            f.startsWith(`${modName}/`) ||
+            f.includes(`\\${modName}\\`) ||
+            f.startsWith(`${modName}\\`)
+        );
+
+        if (modFiles.length > 0) {
+          const changelogPath = path.join(modulesDir, modName, 'CHANGELOG.md');
+          const header = fs.existsSync(changelogPath)
+            ? ''
+            : `# Changelog: ${modName}\n\nHistórico detalhado de alterações, tarefas implementadas e entregas verificadas neste módulo.\n\n## Histórico de Entregas\n`;
+
+          const reqs =
+            input.verificationReport.requirements_checked
+              .filter((r) => r.status === 'verified')
+              .map((r) => r.requirement_id)
+              .join(', ') || 'n/a';
+
+          const fileList = modFiles.map((f) => `  - \`${f}\``).join('\n');
+
+          const entryContent = `\n### [${timestamp}] Run ${input.runId} | Fase ${input.phase}
+- **Autor / Usuário**: ${actor}
+- **Commit**: \`${input.resultCommit || 'local'}\`
+- **Requisitos Verificados**: ${reqs} (${input.verificationReport.evidence.tests_passed} testes aprovados)
+- **Status da Verificação**: ${input.verificationReport.status} (ID: ${input.verificationReport.verification_id})
+- **Arquivos Alterados no Módulo**:
+${fileList}
+`;
+          const currentContent = fs.existsSync(changelogPath) ? fs.readFileSync(changelogPath, 'utf8') : '';
+          fs.writeFileSync(changelogPath, (currentContent ? currentContent : header) + entryContent, 'utf8');
+        }
+      }
+    } catch {
+      // Non-blocking if directory traversal fails
+    }
   }
 }

@@ -211,6 +211,20 @@ ${modulesList}
       } else {
         preserved.push(`.planning/modules/${mod.name}/ROADMAP.md`);
       }
+
+      const modChangelog = path.join(modPlanningDir, 'CHANGELOG.md');
+      if (!fs.existsSync(modChangelog)) {
+        const modChangelogContent = `# Changelog: ${mod.name}
+
+Histórico detalhado de alterações, tarefas implementadas e entregas verificadas neste módulo.
+
+## Histórico de Entregas
+`;
+        fs.writeFileSync(modChangelog, modChangelogContent, 'utf8');
+        created.push(`.planning/modules/${mod.name}/CHANGELOG.md`);
+      } else {
+        preserved.push(`.planning/modules/${mod.name}/CHANGELOG.md`);
+      }
     }
 
     // 3. Team governance: .planning/team/OWNERSHIP.md
