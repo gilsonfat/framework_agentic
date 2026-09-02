@@ -9,6 +9,7 @@ import { IdRegistry } from './id-registry.js';
 import { TeamCoordinator } from './team.js';
 import { SkillRegistry } from './skill-registry.js';
 import { PolicyEngine } from './policy-engine.js';
+import { MilestoneManager } from './milestone-manager.js';
 import { ModuleDetector } from './module-detector.js';
 import { ComplexityLevel } from '../types/config.js';
 import { WorkPackage, WorkPackageSlice } from '../types/task.js';
@@ -61,6 +62,7 @@ export class PromptOrchestrator {
   private team: TeamCoordinator;
   private skills: SkillRegistry;
   private policy: PolicyEngine;
+  private milestones: MilestoneManager;
 
   constructor(projectRoot: string = process.cwd()) {
     this.projectRoot = path.resolve(projectRoot);
@@ -74,6 +76,7 @@ export class PromptOrchestrator {
     this.team = new TeamCoordinator(this.projectRoot);
     this.skills = new SkillRegistry(this.projectRoot);
     this.policy = new PolicyEngine(this.projectRoot);
+    this.milestones = new MilestoneManager(this.projectRoot);
   }
 
   public async dispatchPrompt(
@@ -150,7 +153,7 @@ export class PromptOrchestrator {
     const specKitDoc = this.specEngine.generateGitHubSpecKit({
       reqId,
       phaseId,
-      milestone: 'M01',
+      milestone: this.milestones.currentMilestoneId(),
       promptText: trimmedPrompt,
       bmad: bmadBriefing,
       decisions: decisionRecords,
@@ -177,7 +180,7 @@ export class PromptOrchestrator {
         const sliceSpec = this.specEngine.generateGitHubSpecKit({
           reqId: sliceIds.reqId,
           phaseId,
-          milestone: 'M01',
+          milestone: this.milestones.currentMilestoneId(),
           promptText: sliceText,
           bmad: sliceBriefing,
           decisions: decisionRecords,
@@ -218,7 +221,7 @@ export class PromptOrchestrator {
 
     const workPackage: WorkPackage = {
       run_id: runId,
-      milestone: 'M01',
+      milestone: this.milestones.currentMilestoneId(),
       phase: phaseId,
       goal: bmadBriefing.title,
       scope: {

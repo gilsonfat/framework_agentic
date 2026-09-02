@@ -34,6 +34,9 @@ export type AuditEventType =
   | 'POLICY_OVERRIDDEN'
   | 'WORKTREE_CREATED'
   | 'WORKTREE_REMOVED'
+  | 'MILESTONE_ACTIVATED'
+  | 'MILESTONE_CLOSED'
+  | 'PHASE_CLOSED'
   | 'AUDIT_INITIALIZED';
 
 export interface AuditEvent {

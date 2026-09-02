@@ -30,6 +30,8 @@ import { CliError, reportError, requireInitialized } from './errors.js';
 import { PolicyEngine } from '../core/policy-engine.js';
 import { WorktreeManager } from '../core/worktree-manager.js';
 import { ChangeKind } from '../types/policy.js';
+import { MilestoneManager } from '../core/milestone-manager.js';
+import { NextActionResolver } from '../core/next-action.js';
 import { ExecutionMode } from '../types/execution.js';
 
 function resolveTarget(options: { target?: string }, projectRoot: string): string {
@@ -672,6 +674,168 @@ export function createCli(projectRoot: string = process.cwd()): Command {
         console.log(
           `${event.time} #${event.seq ?? '-'} ${event.run} ${event.type}${event.from ? ` ${event.from}->${event.to}` : ''}${event.actor ? ` (${event.actor})` : ''}`
         );
+      }
+    });
+
+  // ------------------------------------------------------------------ next ---
+  program
+    .command('next')
+    .description('Say (or run) the single next step for this repository')
+    .option('-t, --target <path>', 'Target project directory', projectRoot)
+    .option('--run', 'Execute the suggested command when it is safe to do so', false)
+    .action(async (options) => {
+      const targetDir = resolveTarget(options, projectRoot);
+      const action = new NextActionResolver(targetDir).resolve();
+
+      console.log(`\n>>> ${action.summary}`);
+      for (const detail of action.details) {
+        console.log(`    ${detail}`);
+      }
+      if (action.command) {
+        console.log(`\n    ${action.command}`);
+      }
+
+      if (!options.run || !action.command) {
+        console.log('');
+        return;
+      }
+
+      if (!action.autoRunnable) {
+        // Deciding a gate, migrating artifacts or implementing code are not
+        // things a convenience command should do on someone's behalf.
+        console.log('\ni This step needs a human decision, so --run will not perform it.\n');
+        return;
+      }
+
+      console.log(`\n>>> Running: ${action.command}\n`);
+      const argv = action.command.split(' ').filter((part) => part.length > 0);
+      process.exitCode = await runCli(['node', ...argv], targetDir);
+    });
+
+  // ------------------------------------------------------------- milestone ---
+  const milestone = program
+    .command('milestone')
+    .description('Milestone and phase lifecycle (the roadmap)');
+
+  milestone
+    .command('status', { isDefault: true })
+    .description('Progress of the active milestone, measured against evidence')
+    .option('-t, --target <path>', 'Target project directory', projectRoot)
+    .action((options) => {
+      const manager = new MilestoneManager(resolveInitialized(options, projectRoot, 'milestone status'));
+      const progress = manager.progress();
+
+      console.log(`\n${progress.milestone} - ${progress.title} [${progress.status}]`);
+      console.log(
+        `Phases: ${progress.phasesComplete}/${progress.phasesTotal} complete | Requirements closed with evidence: ${progress.requirementsClosed}/${progress.requirementsTotal}\n`
+      );
+
+      if (progress.phases.length === 0) {
+        console.log('No phase registered yet. Start one with: agentic prompt "<instruction>"\n');
+        return;
+      }
+
+      for (const phase of progress.phases) {
+        const mark = phase.status === 'complete' ? 'x' : phase.status === 'active' ? '>' : '-';
+        console.log(
+          `${mark} ${phase.phase.padEnd(10)} ${String(phase.requirementsClosed).padStart(2)}/${String(
+            phase.requirementsTotal
+          ).padEnd(2)} ${phase.title}`
+        );
+        if (phase.requirementsUnbacked.length > 0) {
+          console.log(`             ! closed without usable evidence: ${phase.requirementsUnbacked.join(', ')}`);
+        }
+      }
+
+      console.log(
+        progress.readyToClose
+          ? '\n+ Every phase is closed with evidence. Advance with: agentic milestone advance\n'
+          : ''
+      );
+    });
+
+  milestone
+    .command('list')
+    .description('Every milestone on the roadmap')
+    .option('-t, --target <path>', 'Target project directory', projectRoot)
+    .action((options) => {
+      const roadmap = new MilestoneManager(resolveInitialized(options, projectRoot, 'milestone list')).load();
+
+      console.log('');
+      for (const entry of roadmap.milestones) {
+        const current = entry.id === roadmap.current_milestone ? '*' : ' ';
+        const complete = entry.phases.filter((p) => p.status === 'complete').length;
+        console.log(
+          `${current} ${entry.id.padEnd(8)} [${entry.status.padEnd(8)}] ${complete}/${entry.phases.length} phases  ${entry.title}${
+            entry.gate ? `  (gate ${entry.gate})` : ''
+          }`
+        );
+      }
+      console.log('');
+    });
+
+  milestone
+    .command('new <title...>')
+    .description('Open a new milestone (subject to the new_milestone human gate)')
+    .option('-t, --target <path>', 'Target project directory', projectRoot)
+    .option('--goal <text>', 'What this milestone is for')
+    .action((titleParts: string[], options) => {
+      const targetDir = resolveInitialized(options, projectRoot, 'milestone new');
+      const result = new MilestoneManager(targetDir).open(titleParts.join(' '), { goal: options.goal });
+
+      console.log(`+ ${result.milestone.id} created: ${result.milestone.title}`);
+      if (result.gateId) {
+        console.log(`! It stays 'planned' until a human decides gate ${result.gateId}.`);
+        console.log(`  agentic gate approve ${result.gateId} --note "<why>"`);
+        console.log(`  then: agentic milestone activate ${result.milestone.id}`);
+      } else {
+        console.log(`+ ${result.milestone.id} is now the current milestone.`);
+      }
+    });
+
+  milestone
+    .command('activate <milestoneId>')
+    .description('Make a planned milestone the current one')
+    .option('-t, --target <path>', 'Target project directory', projectRoot)
+    .action((milestoneId: string, options) => {
+      const targetDir = resolveInitialized(options, projectRoot, 'milestone activate');
+      const result = new MilestoneManager(targetDir).activate(milestoneId);
+
+      console.log(result.activated ? `+ ${result.reason}` : `x ${result.reason}`);
+      if (!result.activated) {
+        process.exitCode = 1;
+      }
+    });
+
+  milestone
+    .command('advance')
+    .description('Close every phase whose requirements are backed by evidence, then the milestone')
+    .option('-t, --target <path>', 'Target project directory', projectRoot)
+    .action((options) => {
+      const targetDir = resolveInitialized(options, projectRoot, 'milestone advance');
+      const result = new MilestoneManager(targetDir).advance();
+
+      if (result.closedPhases.length > 0) {
+        console.log(`+ Phases closed: ${result.closedPhases.join(', ')}`);
+      }
+      if (result.closedMilestone) {
+        console.log(`+ Milestone closed: ${result.closedMilestone}`);
+      }
+      if (result.activatedMilestone) {
+        console.log(`+ Now current: ${result.activatedMilestone}`);
+      }
+      if (result.blockers.length > 0) {
+        console.log('\nStill open:');
+        for (const blocker of result.blockers) {
+          console.log(`  - ${blocker}`);
+        }
+      }
+      if (
+        result.closedPhases.length === 0 &&
+        !result.closedMilestone &&
+        result.blockers.length === 0
+      ) {
+        console.log('Nothing to advance.');
       }
     });
 

@@ -1,0 +1,8 @@
+schema_version: 2
+current_milestone: M-01
+milestones:
+  - id: M-01
+    title: Initial milestone
+    status: active
+    phases: []
+    opened_at: 2026-09-02T19:44:56.612Z

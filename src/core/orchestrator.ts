@@ -22,6 +22,7 @@ import { IdRegistry } from './id-registry.js';
 import { ARTIFACT_SCHEMA_VERSION, isCurrent, stampVersion } from './artifact-schema.js';
 import { PolicyEngine } from './policy-engine.js';
 import { WorktreeManager } from './worktree-manager.js';
+import { MilestoneManager } from './milestone-manager.js';
 import { RunDescriptor } from '../types/run.js';
 import { WorkPackage, TaskContract, TaskDAGNode } from '../types/task.js';
 import { BmadBriefing } from '../types/bmad.js';
@@ -109,6 +110,7 @@ export class Orchestrator {
   private idRegistry: IdRegistry;
   private policyEngine: PolicyEngine;
   private worktrees: WorktreeManager;
+  private milestones: MilestoneManager;
 
   constructor(projectRoot: string = process.cwd()) {
     this.projectRoot = path.resolve(projectRoot);
@@ -132,6 +134,7 @@ export class Orchestrator {
     this.idRegistry = new IdRegistry(this.projectRoot, this.auditLogger);
     this.policyEngine = new PolicyEngine(this.projectRoot, this.configLoader);
     this.worktrees = new WorktreeManager(this.projectRoot, this.auditLogger);
+    this.milestones = new MilestoneManager(this.projectRoot, this.auditLogger, this.idRegistry);
   }
 
   public generateRunId(): string {
@@ -215,6 +218,13 @@ export class Orchestrator {
       return blocked;
     }
     this.team.claim(workPackage.phase, { runId, force: options.force });
+
+    workPackage.milestone = this.milestones.currentMilestoneId();
+    this.milestones.registerPhase({
+      phase: workPackage.phase,
+      title: workPackage.goal,
+      requirements: workPackage.requirements,
+    });
 
     this.planner.saveWorkPackage(workPackage);
     this.auditLogger.emit(runId, 'WORK_PACKAGE_CREATED', {
@@ -578,7 +588,13 @@ export class Orchestrator {
       milestone: run.work_package.milestone,
       phase: run.work_package.phase,
     });
-    this.auditLogger.emit(runId, 'STATE_UPDATED');
+    // A phase is done when every requirement it carries is closed against
+    // evidence; nothing else advances the roadmap.
+    const closedPhases = this.milestones.syncFromMatrix(runId);
+
+    this.auditLogger.emit(runId, 'STATE_UPDATED', {
+      metadata: closedPhases.length > 0 ? { closed_phases: closedPhases } : undefined,
+    });
     sm.transition('no_more_work');
 
     try {

@@ -15,6 +15,7 @@ export * from './types/registry.js';
 export * from './types/skills.js';
 export * from './types/integrations.js';
 export * from './types/policy.js';
+export * from './types/roadmap.js';
 
 export * from './core/config-loader.js';
 export * from './core/audit-logger.js';
@@ -43,6 +44,8 @@ export * from './core/worktree-manager.js';
 export * from './core/migrator.js';
 export * from './core/artifact-schema.js';
 export * from './core/artifact-validator.js';
+export * from './core/milestone-manager.js';
+export * from './core/next-action.js';
 export * from './core/remediation.js';
 export * from './core/as-built.js';
 export * from './core/recovery.js';

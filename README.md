@@ -76,6 +76,12 @@ flowchart TD
 npm install && npm run build && npm link
 ```
 
+Publicado, o caminho é direto:
+
+```bash
+npx @agentic/sdlc-orchestrator init
+```
+
 ---
 
 ## Um comando por projeto
@@ -133,6 +139,16 @@ Três cuidados na geração:
 ---
 
 ## Uso
+
+### Perdido? Um comando
+
+```bash
+agentic next
+```
+
+Lê o estado real e diz o único próximo passo — inicializar, migrar artefato velho, decidir um gate, implementar uma tarefa, verificar ou abrir a próxima fase. `agentic next --run` executa quando o passo é seguro (verificar, avançar milestone); quando precisa de decisão humana, ele explica e para.
+
+A mesma resposta aparece em `agentic status`: há **uma única** fonte para "o que fazer agora", em vez de três que divergem.
 
 ### Terminal
 
@@ -226,6 +242,8 @@ agentic team init                   # (re)declara o split compartilhado/local
 | `agentic migrate [--apply]` | Traz os artefatos de `.agentic/` para o schema atual |
 | `agentic prompt "<x>" --split "<a>" --split "<b>" [--parallel]` | Decompõe um épico em fatias (REQ + contrato + tarefa por fatia) |
 | `agentic worktree list \| clean` | Checkouts isolados das ondas paralelas |
+| `agentic next [--run]` | O próximo passo, resolvido do estado real |
+| `agentic milestone status \| list \| new \| activate \| advance` | Ciclo de vida do roadmap |
 | `agentic report ... --force` | Registra o report apesar de violar política (fica auditado) |
 
 ---
@@ -318,6 +336,40 @@ execution:
 ├── templates/         # modelos de work package, tarefa e remediação
 └── audit/             # events.jsonl — cadeia de hash SHA-256, append-only        [compartilhado, merge=union]
 ```
+
+---
+
+## Roadmap: milestones e fases
+
+`.agentic/planning/roadmap.yaml` é verdade compartilhada do time. Todo run registra sua fase lá automaticamente — o roadmap reflete o que está sendo construído, não um plano que ninguém atualiza.
+
+```bash
+agentic milestone status     # progresso medido contra evidência
+agentic milestone list
+agentic milestone new "Cobrança recorrente"
+agentic milestone activate M-02
+agentic milestone advance
+```
+
+A regra é a mesma do requisito individual, um nível acima:
+
+| Nível | Fecha quando |
+| :--- | :--- |
+| Requisito | tem registro de evidência executada (`agentic verify`) |
+| **Fase** | **todos os seus requisitos fecharam com evidência** |
+| **Milestone** | **todas as suas fases fecharam** |
+
+```
+M-01 - Initial milestone [active]
+Phases: 1/2 complete | Requirements closed with evidence: 3/5
+
+x P-001       2/2  Checkout com cartão
+> P-002       1/3  Webhook de confirmação
+```
+
+Um requisito que a matriz diz estar fechado **sem evidência utilizável** não conta: ele aparece como `! closed without usable evidence` e **bloqueia** a fase, em vez de deixá-la avançar. Abrir milestone passa pelo human gate `new_milestone` — fica `planned` até alguém aprovar.
+
+Ao fechar um run com `PASS`, o orquestrador fecha automaticamente as fases que se tornaram elegíveis. Nada de editar o roadmap na mão para marcar algo como pronto.
 
 ---
 
@@ -417,7 +469,7 @@ evidence:
 ## Desenvolvimento
 
 ```bash
-npm test              # 183 testes
+npm test              # 199 testes
 npm run build
 npm run verify:self   # doctor + integridade da auditoria
 ```

@@ -8,6 +8,8 @@ import { GateKeeper } from './gate-keeper.js';
 import { TeamCoordinator } from './team.js';
 import { EvidenceCollector } from './evidence-collector.js';
 import { ARTIFACT_SCHEMA_VERSION, isCurrent, isFromFuture, versionOf } from './artifact-schema.js';
+import { MilestoneManager } from './milestone-manager.js';
+import { NextActionResolver } from './next-action.js';
 
 export interface StatusDashboardData {
   runId: string;
@@ -30,6 +32,8 @@ export interface StatusDashboardData {
   nextAction: string;
   /** Set when the current run artifact was written by another schema version. */
   schemaMismatch?: { found: number; expected: number; direction: 'legacy' | 'future' };
+  /** Roadmap progress for the active milestone. */
+  roadmap?: { milestone: string; title: string; phasesComplete: number; phasesTotal: number };
 }
 
 /**
@@ -151,29 +155,31 @@ export class StatusDashboard {
       .list()
       .map((l) => `${l.scope} -> ${l.owner_email} (until ${l.expires_at})`);
 
+    try {
+      const progress = new MilestoneManager(this.projectRoot).progress();
+      data.milestone = progress.milestone;
+      data.roadmap = {
+        milestone: progress.milestone,
+        title: progress.title,
+        phasesComplete: progress.phasesComplete,
+        phasesTotal: progress.phasesTotal,
+      };
+    } catch {
+      // No roadmap yet: the milestone stays whatever the run declared.
+    }
+
+    // The next action is resolved in one place so the dashboard, `agentic next`
+    // and the agent instructions can never disagree.
     data.nextAction = this.deriveNextAction(data);
     return data;
   }
 
-  private deriveNextAction(data: StatusDashboardData): string {
-    if (data.pendingGates.length > 0) {
-      return `Decide ${data.pendingGates.length} human gate(s): agentic gate list`;
-    }
-    switch (data.state) {
-      case 'AWAITING_AGENT':
-        return data.tasksAwaiting.length > 0
-          ? `Implement .agentic/execution/inbox/ then: agentic report ${data.tasksAwaiting[0]} --status completed`
-          : 'All tasks reported. Close the cycle: agentic verify';
-      case 'BLOCKED':
-        return 'Resolve the blockers above, then: agentic run';
-      case 'REMEDIATING':
-        return 'Apply the remediation package in .agentic/execution/work-packages/, then: agentic verify';
-      case 'HUMAN_GATE':
-        return 'A human decision is required: agentic gate list';
-      case 'COMPLETE':
-        return 'Cycle closed with evidence. Start the next: agentic prompt "<instruction>"';
-      default:
-        return 'Start or continue a cycle: agentic run';
+  private deriveNextAction(_data: StatusDashboardData): string {
+    try {
+      const action = new NextActionResolver(this.projectRoot).resolve();
+      return action.command ? `${action.summary}  ->  ${action.command}` : action.summary;
+    } catch {
+      return 'Run `agentic next` to see what to do.';
     }
   }
 
@@ -197,6 +203,9 @@ export class StatusDashboard {
       `Milestone     ${d.milestone}`,
       `Phase         ${d.phase}`,
       '',
+      ...(d.roadmap
+        ? [`Roadmap       ${d.roadmap.phasesComplete} / ${d.roadmap.phasesTotal} phases complete (${d.roadmap.title})`]
+        : []),
       `Requirements  ${d.requirementsVerified} / ${d.requirementsTotal} closed with evidence`,
       `Tasks         ${d.tasksCompleted} / ${d.tasksTotal} reported complete`,
       `Tests         ${d.testsPassed} pass, ${d.testsFailed} fail (${d.testStatus})`,

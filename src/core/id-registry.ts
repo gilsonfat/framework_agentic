@@ -106,6 +106,7 @@ export class IdRegistry {
       path.join(this.projectRoot, '.agentic', 'specs', 'planned'),
       path.join(this.projectRoot, '.agentic', 'specs', 'decisions'),
       path.join(this.projectRoot, '.agentic', 'specs', 'as-built'),
+      path.join(this.projectRoot, '.agentic', 'planning'),
       path.join(this.projectRoot, '.agentic', 'planning', 'history'),
       path.join(this.projectRoot, '.agentic', 'tasks', 'current'),
     ];

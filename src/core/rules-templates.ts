@@ -36,6 +36,18 @@ export function renderWorkspaceRules(options: RulesTemplateOptions): string {
 
 ---
 
+## 0. Lost? One Command
+
+\`\`\`bash
+agentic next
+\`\`\`
+
+It reads the real state and prints the single next step: initialize, migrate, decide a
+gate, implement a task, verify, or start the next phase. Every other section of this
+document explains *why* that step is what it is.
+
+---
+
 ## 1. How Work Enters This Repository
 
 The framework separates three responsibilities and never blurs them:
@@ -106,7 +118,8 @@ DONE until \`agentic verify\` collects an evidence record from a real test execu
 9. **REPORT** - \`agentic report <TASK-ID> --status completed|blocked\`.
 10. **REVIEW** - L1 self, L2 suite regression, L3 acceptance criteria, L4 security (read-only).
 11. **VERIFY** - fresh verifier over executed evidence. FAIL -> remediation (max 3, then a gate).
-12. **AS-BUILT & STATE** - as-built spec, requirement matrix, declared state re-synced.
+12. **AS-BUILT & STATE** - as-built spec, requirement matrix, declared state re-synced, and
+   any phase whose requirements are all evidence-backed is closed on the roadmap.
 
 ---
 
@@ -124,7 +137,30 @@ DONE until \`agentic verify\` collects an evidence record from a real test execu
 
 ---
 
-## 5. Skill Packs (shared techniques)
+## 5. The Roadmap (milestones and phases)
+
+\`.agentic/planning/roadmap.yaml\` is shared team truth: which milestone is active, which
+phases belong to it, and which requirements each phase carries. Every run registers its
+phase there automatically.
+
+- A **phase closes** when every requirement it carries is closed **against an evidence
+  record**. A closure with no usable evidence blocks the phase instead of advancing it.
+- A **milestone closes** when all its phases are complete; the next planned one is activated.
+- Opening a milestone goes through the \`new_milestone\` human gate: it stays \`planned\` until
+  someone approves it.
+
+\`\`\`bash
+agentic milestone status     # progress measured against evidence
+agentic milestone advance    # close what can honestly be closed
+\`\`\`
+
+Never edit the roadmap to mark something done. If a phase will not close, the reason is in
+\`agentic milestone status\` and it is always the same kind of reason: something claims to be
+done without proof.
+
+---
+
+## 6. Skill Packs (shared techniques)
 
 The framework maps external skills to stages of the cycle in
 \`.agentic/orchestrator/skills.yaml\`, so everyone applies the same technique at the
@@ -160,7 +196,7 @@ They compose: the CLI produces the question set, the skill conducts the conversa
 
 ---
 
-## 6. Command Reference
+## 7. Command Reference
 
 | Command | Purpose |
 | :--- | :--- |
@@ -179,6 +215,8 @@ They compose: the CLI produces the question set, the skill conducts the conversa
 | \`agentic migrate [--apply]\` | Bring \`.agentic\` artifacts to the current schema version |
 | \`agentic prompt "<x>" --split "<a>" --split "<b>" [--parallel]\` | Decompose an epic into slices, each with its own REQ, spec and task |
 | \`agentic worktree list \\| clean\` | Isolated checkouts created for parallel waves |
+| \`agentic next\` | What to do now, resolved from the real state |
+| \`agentic milestone status \\| list \\| new \\| activate \\| advance\` | Roadmap: phases and milestones |
 | \`agentic status\` / \`agentic doctor\` / \`agentic ids\` | Dashboard, diagnostics, identifiers |
 | \`agentic resume [--apply]\` | Inspect and resume an interrupted run |
 `;
@@ -386,6 +424,39 @@ Interpret the outcome honestly:
    \`\`\`bash
    agentic run
    \`\`\`
+`,
+    },
+    {
+      file: 'agentic-next.md',
+      content: `# /agentic-next - What To Do Now
+
+\`\`\`bash
+agentic next
+\`\`\`
+
+It resolves the single next step from the real state: initialize, migrate stale artifacts,
+decide a pending gate, implement an awaiting task, verify, or start the next phase.
+
+Relay the answer as it is, then do it:
+- **implement** - open the prompt pack it names and follow it (TDD, owned paths only).
+- **decide_gate** / **migrate** / **update_cli** - these need a human; explain and stop.
+- **verify** / **advance_milestone** - safe to run; \`agentic next --run\` executes them.
+`,
+    },
+    {
+      file: 'agentic-milestone.md',
+      content: `# /agentic-milestone - Roadmap
+
+\`\`\`bash
+agentic milestone status     # phases and requirements closed with evidence
+agentic milestone list       # every milestone
+agentic milestone advance    # close what can honestly be closed
+agentic milestone new "<title>"   # opens the new_milestone human gate
+\`\`\`
+
+A phase closes only when all its requirements are closed against an evidence record.
+If \`advance\` reports "Still open", read the reason literally: something claims to be done
+without proof. Never edit \`roadmap.yaml\` to make it pass.
 `,
     },
     {

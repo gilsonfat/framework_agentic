@@ -23,16 +23,22 @@
   },
   "keywords": [
     "agentic",
-    "sdlc",
-    "orchestrator",
+    "ai-agents",
+    "antigravity",
+    "claude-code",
+    "codex",
+    "evidence-gated",
+    "gemini-cli",
     "gsd",
-    "tlc",
-    "ruflo",
-    "superpowers",
     "multi-agent",
-    "state-machine"
+    "orchestrator",
+    "ruflo",
+    "sdlc",
+    "state-machine",
+    "superpowers",
+    "tlc"
   ],
-  "author": "",
+  "author": "Gilson Santana",
   "license": "MIT",
   "dependencies": {
     "ajv": "^8.17.1",
@@ -64,6 +70,12 @@
     ".agentic/orchestrator",
     ".agentic/prompts",
     ".agentic/templates",
-    "README.md"
-  ]
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "docs/ARCHITECTURE.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }

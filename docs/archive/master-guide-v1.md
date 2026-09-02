@@ -1,3 +1,25 @@
+> # SUPERSEDED - ARCHIVED FOR HISTORY
+>
+> This is the original master guide (v1). It describes the framework **as it was
+> designed before the evidence refactor**, and several of its instructions are now
+> wrong in ways that matter:
+>
+> - it predates `AWAITING_AGENT`, `agentic report` and `agentic verify`: in v1 the
+>   orchestrator "executed" tasks itself and synthesized their test results;
+> - it predates evidence-gated closure, human gates that actually block, the team
+>   layer, the skill packs, artifact versioning and the policy engine.
+>
+> **Do not follow this document.** The current, accurate sources are:
+>
+> - [`README.md`](../../README.md) - what the framework is and how to use it
+> - [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md) - how it is built and where each invariant is enforced
+> - [`AGENTS.md`](../../AGENTS.md) - the protocol every AI agent must follow
+>
+> It is kept because it records the original intent and the reasoning behind the
+> 12-step cycle, which the current design still honours.
+
+---
+
 # Agentic SDLC Orchestrator
 ## Guia Mestre de Instalação, Bootstrap e Implementação
 

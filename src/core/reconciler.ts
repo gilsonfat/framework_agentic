@@ -3,6 +3,7 @@ import path from 'path';
 import { ObservedState, DeclaredState, ReconciledState, ReconciledItem } from '../types/state.js';
 import { AuditLogger } from './audit-logger.js';
 import { stampVersion } from './artifact-schema.js';
+import { MilestoneManager } from './milestone-manager.js';
 import { ModuleDetector } from './module-detector.js';
 
 export class Reconciler {
@@ -198,8 +199,15 @@ export class Reconciler {
 
     const pendingRequirements = Object.values(requirements).filter((r) => r.status !== 'done').length;
 
+    let roadmapMilestone: string | undefined;
+    try {
+      roadmapMilestone = new MilestoneManager(this.projectRoot, this.auditLogger).currentMilestoneId();
+    } catch {
+      roadmapMilestone = undefined;
+    }
+
     const next: DeclaredState = {
-      milestone: context.milestone || current.milestone,
+      milestone: context.milestone || roadmapMilestone || current.milestone,
       phase: context.phase || current.phase,
       requirements,
       tasks,
