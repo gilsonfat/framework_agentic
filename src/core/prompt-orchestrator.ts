@@ -1,7 +1,6 @@
 import path from 'path';
 import { Orchestrator } from './orchestrator.js';
 import { Planner } from './planner.js';
-import { BmadEngine } from './bmad-engine.js';
 import { GrillMeEngine } from './grill-me-engine.js';
 import { DecisionRecorder } from './decision-recorder.js';
 import { SpecEngine } from './spec-engine.js';
@@ -15,6 +14,17 @@ import { ComplexityLevel } from '../types/config.js';
 import { WorkPackage, WorkPackageSlice } from '../types/task.js';
 import { RunDescriptor } from '../types/run.js';
 import { ExecutionMode } from '../types/execution.js';
+
+/**
+ * A readable title for the request, derived from the request itself.
+ */
+export function deriveTitle(prompt: string): string {
+  const clean = prompt
+    .replace(/^(por favor|crie|criar|adicione|adicionar|implemente|implementar|fazer|ajustar)\s+/i, '')
+    .trim();
+  const capitalized = clean.charAt(0).toUpperCase() + clean.slice(1);
+  return capitalized.length > 60 ? `${capitalized.slice(0, 57)}...` : capitalized;
+}
 
 export interface PromptDispatchOptions {
   phaseId?: string;
@@ -41,9 +51,9 @@ export interface PromptDispatchOptions {
 }
 
 /**
- * Turns a free-form instruction into the framework's artifacts (BMAD briefing,
- * probes, ADRs, Spec Kit contract, work package) and then hands the compiled
- * work to the orchestrator.
+ * Turns a free-form instruction into the framework's artifacts (probes, ADRs,
+ * Spec Kit contract, work package) and then hands the compiled work to the
+ * orchestrator.
  *
  * Note on responsibility: this layer *structures* the request. It does not claim
  * that the request was implemented — the run status returned by the orchestrator
@@ -54,7 +64,6 @@ export class PromptOrchestrator {
   private projectRoot: string;
   private orchestrator: Orchestrator;
   private planner: Planner;
-  private bmadEngine: BmadEngine;
   private grillMeEngine: GrillMeEngine;
   private decisionRecorder: DecisionRecorder;
   private specEngine: SpecEngine;
@@ -68,7 +77,6 @@ export class PromptOrchestrator {
     this.projectRoot = path.resolve(projectRoot);
     this.orchestrator = new Orchestrator(this.projectRoot);
     this.planner = new Planner(this.projectRoot);
-    this.bmadEngine = new BmadEngine(this.projectRoot);
     this.grillMeEngine = new GrillMeEngine(this.projectRoot);
     this.idRegistry = new IdRegistry(this.projectRoot);
     this.decisionRecorder = new DecisionRecorder(this.projectRoot, this.idRegistry);
@@ -89,7 +97,7 @@ export class PromptOrchestrator {
     }
 
     console.log(`\n=============================================================`);
-    console.log(`>>> STRUCTURING PROMPT (BMAD -> GRILL-ME -> ADR -> SPEC KIT):`);
+    console.log(`>>> STRUCTURING PROMPT (PROBE -> ADR -> SPEC KIT):`);
     console.log(`"${trimmedPrompt}"`);
     console.log(`=============================================================\n`);
 
@@ -104,16 +112,13 @@ export class PromptOrchestrator {
     });
     const phaseId = options.phaseId || allocatedPhase;
 
-    // ---- 1. BMAD briefing -------------------------------------------------
-    console.log(`>>> [1/4] BMAD refinement (Business, Modeling, Architecture, Delivery)...`);
-    const bmadBriefing = this.bmadEngine.enhancePrompt(trimmedPrompt, { domain });
-    const bmadFile = this.bmadEngine.saveBriefing(bmadBriefing, runId);
-    console.log(`+ Briefing: "${bmadBriefing.title}" -> ${path.relative(this.projectRoot, bmadFile)}`);
-    this.printSkillHint('refine', domain, 'deepen this briefing');
+    const title = deriveTitle(trimmedPrompt);
 
-    // ---- 2. Grill-Me probing ---------------------------------------------
-    console.log(`\n>>> [2/4] Grill-Me adversarial probing...`);
-    const grillResult = this.grillMeEngine.grill(trimmedPrompt, bmadBriefing, {
+    // ---- 1. Grill-Me probing ---------------------------------------------
+    console.log(`>>> [1/3] Grill-Me adversarial probing...`);
+    this.printSkillHint('refine', domain, 'deepen the domain understanding before deciding');
+    const grillResult = this.grillMeEngine.grill(trimmedPrompt, {
+      domain,
       interactive: options.interactiveGrill,
       userAnswers: options.userAnswers,
       answeredBy: this.team.identity().email,
@@ -141,21 +146,24 @@ export class PromptOrchestrator {
       );
     }
 
-    // ---- 3. Decision records ---------------------------------------------
-    console.log(`\n>>> [3/4] Recording architectural decisions...`);
-    const decisionRecords = this.decisionRecorder.recordDecisions(runId, grillResult, bmadBriefing, reqId);
+    // ---- 2. Decision records ---------------------------------------------
+    console.log(`\n>>> [2/3] Recording architectural decisions...`);
+    const decisionRecords = this.decisionRecorder.recordDecisions(runId, grillResult, {
+      title,
+      requirementId: reqId,
+    });
     for (const decision of decisionRecords) {
       console.log(`+ ${decision.id} — "${decision.title}" [${decision.status}]`);
     }
 
-    // ---- 4. Spec Kit contract --------------------------------------------
-    console.log(`\n>>> [4/4] Generating Spec Kit contract (${specId})...`);
+    // ---- 3. Spec Kit contract --------------------------------------------
+    console.log(`\n>>> [3/3] Generating Spec Kit contract (${specId})...`);
     const specKitDoc = this.specEngine.generateGitHubSpecKit({
       reqId,
       phaseId,
       milestone: this.milestones.currentMilestoneId(),
       promptText: trimmedPrompt,
-      bmad: bmadBriefing,
+      title,
       decisions: decisionRecords,
     });
     const specFile = this.specEngine.saveGitHubSpecKit(specKitDoc);
@@ -176,13 +184,12 @@ export class PromptOrchestrator {
       sliceTexts.forEach((sliceText, index) => {
         const sliceIds = this.idRegistry.allocateWorkUnit({ runId, title: sliceText.slice(0, 80) });
         const sliceDomain = this.inferDomain(sliceText);
-        const sliceBriefing = this.bmadEngine.enhancePrompt(sliceText, { domain: sliceDomain });
         const sliceSpec = this.specEngine.generateGitHubSpecKit({
           reqId: sliceIds.reqId,
           phaseId,
           milestone: this.milestones.currentMilestoneId(),
           promptText: sliceText,
-          bmad: sliceBriefing,
+          title: deriveTitle(sliceText),
           decisions: decisionRecords,
         });
         const sliceSpecFile = this.specEngine.saveGitHubSpecKit(sliceSpec);
@@ -215,24 +222,24 @@ export class PromptOrchestrator {
       (m) => m.name.toLowerCase() === domain.toLowerCase() || trimmedPrompt.toLowerCase().includes(m.name.toLowerCase())
     );
 
-    const scopeIncludes = targetModule
-      ? [`${targetModule.relativePath}/**`, ...bmadBriefing.business.scope_in]
-      : bmadBriefing.business.scope_in;
+    // Only real path patterns belong in the scope: it is the ownership boundary
+    // handed to the agent, not a place for prose.
+    const scopeIncludes = targetModule ? [`${targetModule.relativePath}/**`] : [];
 
     const workPackage: WorkPackage = {
       run_id: runId,
       milestone: this.milestones.currentMilestoneId(),
       phase: phaseId,
-      goal: bmadBriefing.title,
+      goal: title,
       scope: {
         include: scopeIncludes,
-        exclude: bmadBriefing.business.scope_out,
+        exclude: [],
       },
       requirements: slices.length > 0 ? slices.map((slice) => slice.requirement) : [reqId],
       slices: slices.length > 0 ? slices : undefined,
       change_kind: this.policy.classify(trimmedPrompt, { domain, complexity }).kind,
       dependencies: [],
-      risks: [...bmadBriefing.delivery.key_risks, ...grillResult.unresolved_items],
+      risks: [...grillResult.unresolved_items],
       blockers: [],
       complexity,
       expected_domains: slices.length > 0 ? Array.from(new Set(slices.map((s) => s.domain || domain))) : [domain],
@@ -249,7 +256,6 @@ export class PromptOrchestrator {
     const runResult = await this.orchestrator.runCycle({
       runId,
       phaseId,
-      bmadBriefing,
       grillResult,
       decisionRecords,
       specKitDoc,
@@ -282,6 +288,7 @@ export class PromptOrchestrator {
     console.log(`>>> RUN ${run.run_id} — STATUS: ${run.status}`);
     console.log(`- Requirement(s): ${run.work_package.requirements.join(', ') || 'none'}`);
     console.log(`- Spec Kit: ${run.spec_kit?.spec_id || 'n/a'} | ADRs: ${run.decisions?.length || 0}`);
+    console.log(`- Change kind: ${run.work_package.change_kind || 'n/a'}`);
     console.log(`- Verification: ${run.verification?.status || 'NOT RUN'}`);
     if (run.evidence) {
       console.log(

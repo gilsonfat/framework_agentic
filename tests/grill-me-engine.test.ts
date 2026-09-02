@@ -3,17 +3,14 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { GrillMeEngine } from '../src/core/grill-me-engine.js';
-import { BmadEngine } from '../src/core/bmad-engine.js';
 
 describe('GrillMeEngine (Adversarial Probing & Clarification)', () => {
   let tempDir: string;
   let grillEngine: GrillMeEngine;
-  let bmadEngine: BmadEngine;
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentic-grill-'));
     grillEngine = new GrillMeEngine(tempDir);
-    bmadEngine = new BmadEngine(tempDir);
   });
 
   afterEach(() => {
@@ -24,8 +21,7 @@ describe('GrillMeEngine (Adversarial Probing & Clarification)', () => {
 
   it('should interrogate ambiguities, failure modes, trade-offs, and security guardrails', () => {
     const raw = 'Criar endpoint de login com JWT';
-    const briefing = bmadEngine.enhancePrompt(raw);
-    const result = grillEngine.grill(raw, briefing);
+    const result = grillEngine.grill(raw);
 
     expect(result.raw_prompt).toBe(raw);
     expect(result.probes.length).toBeGreaterThanOrEqual(4);
@@ -66,7 +62,7 @@ describe('GrillMeEngine (Adversarial Probing & Clarification)', () => {
   });
 
   it('should record human answers as real decisions', () => {
-    const result = grillEngine.grill('Criar api de uploads', undefined, {
+    const result = grillEngine.grill('Criar api de uploads', {
       userAnswers: {
         'GRILL-001': 'Custom validation: Max size 5MB and JPEG/PNG only.',
       },
@@ -88,7 +84,7 @@ describe('GrillMeEngine (Adversarial Probing & Clarification)', () => {
       answers[probe.id] = `Decided: ${probe.recommended_option || probe.resolved_answer}`;
     }
 
-    const result = grillEngine.grill(raw, undefined, { userAnswers: answers, answeredBy: 'lead@example.com' });
+    const result = grillEngine.grill(raw, { userAnswers: answers, answeredBy: 'lead@example.com' });
     expect(result.fully_resolved).toBe(true);
     expect(result.unresolved_items).toEqual([]);
   });

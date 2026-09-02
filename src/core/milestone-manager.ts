@@ -127,6 +127,59 @@ export class MilestoneManager {
   }
 
   /**
+   * Seeds the roadmap from a plan the project already had.
+   *
+   * Everything is imported as `planned`, including items the legacy document
+   * ticked off: "observed state beats declared state" applies here too, so a
+   * checkbox someone wrote is recorded as `declared_complete` and still has to
+   * earn its closure through evidence like any other phase.
+   */
+  public importFromPlanning(
+    items: Array<{ title: string; completed: boolean }>,
+    source: string
+  ): RoadmapPhase[] {
+    if (items.length === 0) return [];
+
+    const roadmap = this.load();
+    const milestone = this.milestoneOf(roadmap, roadmap.current_milestone);
+    const imported: RoadmapPhase[] = [];
+
+    for (const item of items) {
+      const title = item.title.trim();
+      if (title.length === 0) continue;
+      // Idempotent: re-running the import must not duplicate a phase.
+      if (milestone.phases.some((phase) => phase.title === title)) continue;
+
+      const phase: RoadmapPhase = {
+        // A distinct id space, so an imported phase can never collide with the
+        // `P-###` ids the registry mints for new work.
+        id: `P-L${String(milestone.phases.filter((p) => p.imported_from).length + 1).padStart(2, '0')}`,
+        title,
+        status: 'planned',
+        requirements: [],
+        imported_from: source,
+        declared_complete: item.completed,
+      };
+
+      milestone.phases.push(phase);
+      imported.push(phase);
+    }
+
+    if (imported.length > 0) {
+      this.save(roadmap);
+      this.auditLogger.emit('SYSTEM', 'PHASE_CLOSED', {
+        metadata: {
+          imported: imported.map((p) => p.id),
+          source,
+          note: 'imported as planned; declared completion carries no evidence',
+        },
+      });
+    }
+
+    return imported;
+  }
+
+  /**
    * Opens a milestone. `gates.yaml` declares `new_milestone` as a human gate, so
    * the milestone is recorded as `planned` and only becomes active once the gate
    * is approved (or when the gate is not required).
@@ -249,7 +302,13 @@ export class MilestoneManager {
       }
 
       if (phaseProgress.requirementsTotal === 0) {
-        result.blockers.push(`${phase.id}: no requirement is attached to it yet.`);
+        result.blockers.push(
+          phase.imported_from
+            ? `${phase.id}: imported from ${phase.imported_from}${
+                phase.declared_complete ? ' (declared done there)' : ''
+              } and has no requirement in this framework yet. Start it with: agentic prompt "${phase.title}"`
+            : `${phase.id}: no requirement is attached to it yet.`
+        );
         continue;
       }
 
@@ -332,6 +391,7 @@ export class MilestoneManager {
         phase: phase.id,
         title: phase.title,
         status: phase.status,
+        declaredComplete: phase.declared_complete,
         requirementsTotal: phase.requirements.length,
         requirementsClosed: closed,
         requirementsUnbacked: unbacked,

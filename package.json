@@ -1,6 +1,6 @@
 {
   "name": "@agentic/sdlc-orchestrator",
-  "version": "1.1.0",
+  "version": "1.2.1",
   "description": "Agentic SDLC Orchestrator - deterministic, state-driven delivery framework with evidence-gated closure for AI coding agents",
   "type": "module",
   "main": "dist/index.js",

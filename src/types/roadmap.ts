@@ -19,6 +19,13 @@ export interface RoadmapPhase {
   closed_at?: string;
   /** Run that closed the phase, for traceability. */
   closed_by_run?: string;
+  /**
+   * Imported from a roadmap the project already had. Such a phase is never
+   * created as `complete`: `declared_complete` records what the legacy document
+   * claimed, which is a declaration and not evidence this framework collected.
+   */
+  imported_from?: string;
+  declared_complete?: boolean;
 }
 
 export interface RoadmapMilestone {
@@ -43,6 +50,8 @@ export interface PhaseProgress {
   phase: string;
   title: string;
   status: PhaseStatus;
+  /** Declared done by a pre-existing roadmap, with no evidence in this framework. */
+  declaredComplete?: boolean;
   requirementsTotal: number;
   /** Requirements closed against an evidence record. */
   requirementsClosed: number;

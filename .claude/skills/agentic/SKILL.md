@@ -1,6 +1,6 @@
 ---
 name: agentic
-description: Deliver any task, feature, bugfix or refactoring through the Agentic SDLC cycle - BMAD refinement, Grill-Me probing, ADR decisions, Spec Kit contracts, DAG dispatch, strict TDD, 4-layer review, evidence-gated verification and as-built documentation.
+description: Deliver any task, feature, bugfix or refactoring through the Agentic SDLC cycle - Grill-Me probing, ADR decisions, Spec Kit contracts, DAG dispatch, strict TDD, 4-layer review, evidence-gated verification and as-built documentation.
 ---
 
 # Agentic SDLC Orchestrator Skill

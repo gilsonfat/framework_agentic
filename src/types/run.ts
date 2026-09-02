@@ -2,7 +2,6 @@ import { OrchestratorState, ObservedState } from './state.js';
 import { WorkPackage, TaskContract, TaskDAG } from './task.js';
 import { VerificationReport, RemediationPackage } from './verification.js';
 import { EvidenceRecord } from './evidence.js';
-import { BmadBriefing } from './bmad.js';
 import { GrillMeResult, DecisionRecord } from './decision.js';
 import { GitHubSpecKitDocument } from './spec-kit.js';
 
@@ -25,7 +24,6 @@ export interface RunDescriptor {
   result_commit?: string;
   initial_observed_state?: ObservedState;
   work_package: WorkPackage;
-  bmad_briefing?: BmadBriefing;
   grill_me?: GrillMeResult;
   decisions?: DecisionRecord[];
   spec_kit?: GitHubSpecKitDocument;

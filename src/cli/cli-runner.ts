@@ -219,7 +219,7 @@ export function createCli(projectRoot: string = process.cwd()): Command {
   program
     .command('prompt <instructions...>')
     .alias('do')
-    .description('Structure an instruction (BMAD -> Grill-Me -> ADR -> Spec Kit) and start the delivery cycle')
+    .description('Structure an instruction (probe -> ADR -> Spec Kit) and start the delivery cycle')
     .option('-t, --target <path>', 'Target project directory', projectRoot)
     .option('-d, --domain <domain>', 'Explicit domain (backend, frontend, database, security, billing, testing)')
     .option('-c, --complexity <level>', 'Explicit complexity level (XS, S, M, L, XL)')
@@ -264,13 +264,12 @@ export function createCli(projectRoot: string = process.cwd()): Command {
     .action(async (instructionsArray: string[], options) => {
       const targetDir = resolveInitialized(options, projectRoot, 'grill');
       const instruction = instructionsArray.join(' ');
-      const { BmadEngine } = await import('../core/bmad-engine.js');
       const { GrillMeEngine } = await import('../core/grill-me-engine.js');
       const { DecisionRecorder } = await import('../core/decision-recorder.js');
+      const { deriveTitle } = await import('../core/prompt-orchestrator.js');
 
-      const briefing = new BmadEngine(targetDir).enhancePrompt(instruction);
       const grill = new GrillMeEngine(targetDir);
-      const result = grill.grill(instruction, briefing, {
+      const result = grill.grill(instruction, {
         interactive: true,
         userAnswers: loadAnswers(options.answers),
         answeredBy: new TeamCoordinator(targetDir).identity().email,
@@ -278,7 +277,9 @@ export function createCli(projectRoot: string = process.cwd()): Command {
       console.log(grill.formatGrillReport(result));
 
       const runId = `RUN-GRILL-${Date.now()}`;
-      const records = new DecisionRecorder(targetDir).recordDecisions(runId, result, briefing);
+      const records = new DecisionRecorder(targetDir).recordDecisions(runId, result, {
+        title: deriveTitle(instruction),
+      });
       console.log(`+ Recorded ${records.length} ADR(s) in .agentic/specs/decisions/`);
       for (const record of records) {
         console.log(`  - ${record.id}: ${record.title} [${record.status}]`);
@@ -297,15 +298,19 @@ export function createCli(projectRoot: string = process.cwd()): Command {
     .action(async (instructionsArray: string[], options) => {
       const targetDir = resolveInitialized(options, projectRoot, 'spec');
       const instruction = instructionsArray.join(' ');
-      const { BmadEngine } = await import('../core/bmad-engine.js');
       const { SpecEngine } = await import('../core/spec-engine.js');
+      const { deriveTitle } = await import('../core/prompt-orchestrator.js');
 
-      const briefing = new BmadEngine(targetDir).enhancePrompt(instruction);
       const registry = new IdRegistry(targetDir);
       const { reqId, phaseId } = registry.allocateWorkUnit({ title: instruction.slice(0, 80) });
 
       const spec = new SpecEngine(targetDir);
-      const doc = spec.generateGitHubSpecKit({ reqId, phaseId, bmad: briefing, promptText: instruction });
+      const doc = spec.generateGitHubSpecKit({
+        reqId,
+        phaseId,
+        promptText: instruction,
+        title: deriveTitle(instruction),
+      });
       const savedPath = spec.saveGitHubSpecKit(doc);
       console.log(`\n>>> Spec Kit contract generated:`);
       console.log(`- Spec ID:     ${doc.spec_id}`);
@@ -737,11 +742,15 @@ export function createCli(projectRoot: string = process.cwd()): Command {
 
       for (const phase of progress.phases) {
         const mark = phase.status === 'complete' ? 'x' : phase.status === 'active' ? '>' : '-';
+
         console.log(
           `${mark} ${phase.phase.padEnd(10)} ${String(phase.requirementsClosed).padStart(2)}/${String(
             phase.requirementsTotal
           ).padEnd(2)} ${phase.title}`
         );
+        if (phase.declaredComplete) {
+          console.log('             ~ declared done by the previous roadmap; no evidence here yet');
+        }
         if (phase.requirementsUnbacked.length > 0) {
           console.log(`             ! closed without usable evidence: ${phase.requirementsUnbacked.join(', ')}`);
         }
@@ -893,11 +902,17 @@ export function createCli(projectRoot: string = process.cwd()): Command {
       const integrations = new AgentIntegrations(resolveTarget(options, projectRoot));
       console.log('');
       for (const entry of integrations.status()) {
-        const wired = entry.installed ? 'wired  ' : 'missing';
+        const label = entry.state === 'installed' ? 'wired  ' : entry.state === 'partial' ? 'partial' : 'missing';
         const present = entry.detected ? 'detected on this machine' : 'not detected here';
-        console.log(`[${wired}] ${entry.definition.label.padEnd(24)} ${present}`);
+        console.log(`[${label}] ${entry.definition.label.padEnd(24)} ${present}`);
         console.log(`           entry point: ${entry.definition.entryPoint}`);
         console.log(`           files:       ${entry.definition.files.join(', ')}`);
+        if (entry.state === 'partial') {
+          console.log(
+            `           ! ${entry.withoutProtocol.join(', ')} exist but carry no protocol: this product is NOT governed`
+          );
+          console.log(`             fix: agentic agents sync --agents ${entry.definition.id}`);
+        }
       }
       console.log('\nWire or refresh them with: agentic agents sync [--agents claude,gemini]\n');
     });

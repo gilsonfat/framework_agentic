@@ -25,7 +25,6 @@ import { WorktreeManager } from './worktree-manager.js';
 import { MilestoneManager } from './milestone-manager.js';
 import { RunDescriptor } from '../types/run.js';
 import { WorkPackage, TaskContract, TaskDAGNode } from '../types/task.js';
-import { BmadBriefing } from '../types/bmad.js';
 import { GrillMeResult, DecisionRecord } from '../types/decision.js';
 import { GitHubSpecKitDocument } from '../types/spec-kit.js';
 import { ExecutionMode } from '../types/execution.js';
@@ -36,7 +35,6 @@ export interface OrchestrationOptions {
   phaseId?: string;
   runId?: string;
   autoApproveNonDestructiveGates?: boolean;
-  bmadBriefing?: BmadBriefing;
   grillResult?: GrillMeResult;
   decisionRecords?: DecisionRecord[];
   specKitDoc?: GitHubSpecKitDocument;
@@ -58,9 +56,8 @@ export interface OrchestrationOptions {
 /**
  * Keeps only the entries of a work package scope that are really path patterns.
  *
- * `scope.include` mixes machine-generated globs (from the module detector) with
- * prose from the BMAD briefing, so writing all of it into `ownership.write`
- * would produce nonsense boundaries.
+ * `scope.include` may carry free text alongside the globs produced by the module
+ * detector, and only the globs can serve as an ownership boundary.
  */
 function toGlobs(entries: string[] | undefined): string[] {
   return (entries || [])
@@ -785,7 +782,6 @@ export class Orchestrator {
       baseline_commit: input.observedBefore?.git.commit || 'unknown',
       initial_observed_state: input.observedBefore,
       work_package: input.workPackage,
-      bmad_briefing: input.options.bmadBriefing,
       grill_me: input.options.grillResult,
       decisions: input.options.decisionRecords,
       spec_kit: input.options.specKitDoc,

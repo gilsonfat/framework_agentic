@@ -49,9 +49,5 @@ export interface GitHubSpecKitDocument {
     reliability: string[];
   };
   decisions_log: string[];
-  bmad_reference?: {
-    briefing_title: string;
-    engine: string;
-  };
   created_at: string;
 }

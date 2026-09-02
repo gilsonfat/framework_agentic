@@ -5,9 +5,6 @@ providers:
     engine: gsd
     required: true
 
-  bmad:
-    engine: bmad-method
-    required: true
 
   spec_kit:
     engine: github-spec-kit

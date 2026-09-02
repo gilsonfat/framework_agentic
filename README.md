@@ -51,7 +51,7 @@ Entre as duas fases o run fica no estado `AWAITING_AGENT`. Isso **não é falha*
 ```mermaid
 flowchart TD
     A[1. OBSERVE<br/>git + testes + migrations] --> B[2. RECONCILE<br/>declarado vs observado]
-    B --> C[3. REFINE & PROBE<br/>BMAD + Grill-Me + ADR]
+    B --> C[3. PROBE & DECIDE<br/>Grill-Me + ADR]
     C --> D[4. PLAN & SPECIFY<br/>work package + Spec Kit]
     D --> E{5. HUMAN GATES}
     E -- pendente --> G1[HUMAN_GATE<br/>agentic gate approve]
@@ -80,6 +80,27 @@ Publicado, o caminho é direto:
 
 ```bash
 npx @agentic/sdlc-orchestrator init
+```
+
+---
+
+## Adoção em projeto já em andamento
+
+`agentic init` foi desenhado para entrar num repositório que já existe sem quebrar nada:
+
+| O que o projeto já tem | O que acontece |
+| :--- | :--- |
+| `AGENTS.md` / `CLAUDE.md` próprios | **preservados**; o protocolo é anexado num bloco delimitado (`BEGIN/END AGENTIC SDLC PROTOCOL`), atualizado no lugar a cada `agents sync` |
+| `.claude/settings.json` | **mesclado** — suas permissões e seu `model` continuam |
+| CI, código, testes, histórico | intocados |
+| `ROADMAP.md` (raiz, `docs/` ou `.planning/`) | **importado** como fases do roadmap |
+| item `[x]` no roadmap legado | vira fase `planned` marcada como *declarada concluída* — checkbox é declaração, não evidência |
+
+Se um arquivo de instrução existir sem o protocolo, o produto aparece como **`[partial]`** em `agentic agents` e o `doctor` avisa: o framework nunca diz que governa o que não governa.
+
+```bash
+agentic agents            # [wired] / [partial] / [missing] por produto
+agentic agents sync       # anexa ou atualiza o protocolo
 ```
 
 ---
@@ -219,7 +240,7 @@ agentic team init                   # (re)declara o split compartilhado/local
 
 | Comando | Descrição |
 | :--- | :--- |
-| `agentic prompt "<x>"` (alias `do`) | Estrutura a instrução (BMAD → Grill-Me → ADR → Spec Kit) e despacha os pacotes de prompt |
+| `agentic prompt "<x>"` (alias `do`) | Estrutura a instrução (sondagem → ADR → Spec Kit) e despacha os pacotes de prompt |
 | `agentic report <TASK> --status <s>` | Devolve o resultado de uma tarefa ao orquestrador |
 | `agentic verify` | Coleta evidência real, verifica, gera as-built e atualiza o estado |
 | `agentic run [--phase <id>]` | Roda ou retoma o ciclo (`--no-resume`, `--dry-run`, `--force`) |
@@ -254,7 +275,6 @@ O framework tem implementação **nativa** de todos os papéis; os engines exter
 
 | Papel | Engine | Função |
 | :--- | :--- | :--- |
-| Refinamento de prompt | **BMAD** (nativo) | Briefing estruturado: Business, Modeling, Architecture, Delivery |
 | Clarificação | **Grill-Me** (nativo) | Sondagem adversarial; separa decisão de suposição |
 | Decisões | **Decision Recorder** (nativo) | ADRs sequenciais em `.agentic/specs/decisions/` |
 | Especificação | **GitHub Spec Kit** / **TLC** | Contratos, matriz de AC, cenários Given-When-Then |
@@ -270,7 +290,7 @@ O framework tem implementação **nativa** de todos os papéis; os engines exter
 
 | Estágio | Skill | Para quê |
 | :--- | :--- | :--- |
-| refine | `/grill-with-docs`, `/domain-modeling` | aprofundar o briefing BMAD e a terminologia do domínio |
+| refine | `/grill-with-docs`, `/domain-modeling` | aprofundar o entendimento do domínio e a terminologia |
 | probe | `/grill-me`, `/grilling` | conduzir a entrevista real sobre as sondagens abertas |
 | specify | `/to-spec` | enriquecer o SPEC gerado (IDs continuam vindo do registro) |
 | architect | `/codebase-design`, `/improve-codebase-architecture` | fronteiras de módulo e oportunidades de refactor |
@@ -332,7 +352,7 @@ execution:
 ├── gates/             # solicitações de human gate e suas decisões                [compartilhado]
 ├── team/leases/       # reivindicações ativas de fase/tarefa                       [local]
 ├── reconciliation/    # regras e relatórios
-├── prompts/           # briefings BMAD e prompts de papel
+├── prompts/           # prompts de papel (observer, worker, verifier...)
 ├── templates/         # modelos de work package, tarefa e remediação
 └── audit/             # events.jsonl — cadeia de hash SHA-256, append-only        [compartilhado, merge=union]
 ```

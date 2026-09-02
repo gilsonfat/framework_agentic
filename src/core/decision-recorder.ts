@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import { BmadBriefing } from '../types/bmad.js';
 import { GrillMeResult, DecisionRecord } from '../types/decision.js';
 import { IdRegistry } from './id-registry.js';
 
@@ -14,13 +13,12 @@ export class DecisionRecorder {
   }
 
   /**
-   * Transforms Grill-Me interrogations and BMAD briefings into formal Architectural Decision Records (ADRs).
+   * Turns Grill-Me interrogations into formal Architectural Decision Records (ADRs).
    */
   public recordDecisions(
     runId: string,
     grillResult: GrillMeResult,
-    bmad?: BmadBriefing,
-    reqId?: string
+    options: { title?: string; requirementId?: string } = {}
   ): DecisionRecord[] {
     const decisionsDir = path.join(this.projectRoot, '.agentic', 'specs', 'decisions');
     if (!fs.existsSync(decisionsDir)) {
@@ -29,16 +27,16 @@ export class DecisionRecorder {
 
     const records: DecisionRecord[] = [];
     const dateStr = new Date().toISOString().slice(0, 10);
-    const targetReq = reqId || 'REQ-001';
+    const targetReq = options.requirementId || 'REQ-001';
 
     // 1. Core Architecture ADR.
     // Ids come from the sequential registry: random numbers collide across
     // developers and runs, which silently corrupts the decision ledger.
     const primaryAdrId = this.idRegistry.allocate('ADR', {
       runId,
-      title: bmad ? bmad.title : grillResult.raw_prompt,
+      title: options.title || grillResult.raw_prompt,
     });
-    const primaryTitle = bmad ? `Architecture Decision: ${bmad.title}` : `Architecture Decision for ${grillResult.raw_prompt}`;
+    const primaryTitle = `Architecture Decision: ${options.title || grillResult.raw_prompt}`;
 
     const tradeOffs = grillResult.probes.map(
       (p) =>
@@ -54,8 +52,8 @@ export class DecisionRecorder {
       title: primaryTitle,
       status: adrStatus,
       date: dateStr,
-      context: `Requirement context derived from prompt: "${grillResult.raw_prompt}". ${bmad ? bmad.business.objective : ''}`,
-      decision: `Adopt ${bmad ? bmad.architecture.style : 'Layered Clean Architecture'} with explicit contract validation, isolated domain services, and strict TDD verification.`,
+      context: `Requirement context derived from prompt: "${grillResult.raw_prompt}".`,
+      decision: `Adopt a layered, contract-first design with explicit input validation, isolated domain services, and strict TDD verification.`,
       alternatives_considered: [
         {
           option: 'Direct monolithic in-handler implementation without layer separation',

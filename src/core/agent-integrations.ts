@@ -6,6 +6,7 @@ import {
   AgentProductDefinition,
   AgentProductId,
   IntegrationResult,
+  IntegrationStatus,
   WrittenFile,
 } from '../types/integrations.js';
 import { RulesTemplateOptions, renderAgentSkill, renderSlashCommands } from './rules-templates.js';
@@ -29,6 +30,37 @@ export interface InstallIntegrationsOptions extends RulesTemplateOptions {
   /** Pre-approve `agentic` commands in .claude/settings.json. */
   permissions?: boolean;
 }
+
+/** Delimiters of the block this framework owns inside a file it does not own. */
+const PROTOCOL_BEGIN = '<!-- BEGIN AGENTIC SDLC PROTOCOL -->';
+const PROTOCOL_END = '<!-- END AGENTIC SDLC PROTOCOL -->';
+
+/**
+ * Instruction files a project may already have. When one of these exists and was
+ * written by someone else, the protocol is appended inside markers instead of
+ * overwriting their rules - and instead of being silently skipped, which left
+ * Codex and Antigravity ungoverned while the CLI reported them as wired.
+ */
+const SHARED_INSTRUCTION_FILES = new Set([
+  'AGENTS.md',
+  'CLAUDE.md',
+  'GEMINI.md',
+  'CODEX.md',
+  '.github/copilot-instructions.md',
+  '.windsurfrules',
+]);
+
+/** Files that must carry the protocol for a product to count as wired. */
+const PROTOCOL_BEARING_FILES: Partial<Record<AgentProductId, string[]>> = {
+  claude: ['CLAUDE.md'],
+  antigravity: ['AGENTS.md'],
+  gemini: ['GEMINI.md'],
+  codex: ['AGENTS.md', 'CODEX.md'],
+  chatgpt: ['.agentic/agents/CHATGPT.md'],
+  cursor: ['.cursor/rules/agentic.mdc'],
+  copilot: ['.github/copilot-instructions.md'],
+  windsurf: ['.windsurfrules'],
+};
 
 export const AGENT_PRODUCTS: AgentProductDefinition[] = [
   {
@@ -101,6 +133,7 @@ export const ALL_PRODUCT_IDS: AgentProductId[] = AGENT_PRODUCTS.map((p) => p.id)
 export class AgentIntegrations {
   private projectRoot: string;
   private written = new Set<string>();
+  private processEngine = 'superpowers';
 
   constructor(projectRoot: string = process.cwd()) {
     this.projectRoot = path.resolve(projectRoot);
@@ -108,6 +141,7 @@ export class AgentIntegrations {
 
   public install(options: InstallIntegrationsOptions): IntegrationResult[] {
     this.written.clear();
+    this.processEngine = options.processEngine;
     const products = options.products && options.products.length > 0 ? options.products : ALL_PRODUCT_IDS;
     const results: IntegrationResult[] = [];
 
@@ -154,30 +188,60 @@ export class AgentIntegrations {
     }
   }
 
-  /** Which product integrations are currently present in the project. */
-  public status(): Array<{ definition: AgentProductDefinition; installed: boolean; detected: boolean }> {
+  /**
+   * Which product integrations are really in place.
+   *
+   * A file existing is not enough: the file the product reads has to *carry the
+   * protocol*. Otherwise a project with its own `AGENTS.md` would be reported as
+   * wired while Codex and Antigravity read nothing about the workflow.
+   */
+  public status(): IntegrationStatus[] {
     return AGENT_PRODUCTS.map((definition) => {
       const concrete = definition.files.filter((f) => !f.includes('*'));
       const globbed = definition.files.filter((f) => f.includes('*'));
 
-      const concreteOk = concrete.every((f) => fs.existsSync(path.join(this.projectRoot, f)));
-      const globbedOk = globbed.every((pattern) => {
-        const dir = path.join(this.projectRoot, path.dirname(pattern));
-        if (!fs.existsSync(dir)) return false;
-        const extension = path.extname(pattern);
-        try {
-          return fs.readdirSync(dir).some((entry) => entry.endsWith(extension));
-        } catch {
-          return false;
-        }
+      const filesExist =
+        concrete.every((f) => fs.existsSync(path.join(this.projectRoot, f))) &&
+        globbed.every((pattern) => {
+          const dir = path.join(this.projectRoot, path.dirname(pattern));
+          if (!fs.existsSync(dir)) return false;
+          const extension = path.extname(pattern);
+          try {
+            return fs.readdirSync(dir).some((entry) => entry.endsWith(extension));
+          } catch {
+            return false;
+          }
+        });
+
+      const withoutProtocol = (PROTOCOL_BEARING_FILES[definition.id] || []).filter((file) => {
+        const full = path.join(this.projectRoot, file);
+        return fs.existsSync(full) && !this.carriesProtocol(full);
       });
+
+      const state: IntegrationStatus['state'] = !filesExist
+        ? 'missing'
+        : withoutProtocol.length > 0
+        ? 'partial'
+        : 'installed';
 
       return {
         definition,
-        installed: concrete.length + globbed.length > 0 && concreteOk && globbedOk,
+        state,
+        installed: state === 'installed',
         detected: this.detect(definition),
+        withoutProtocol,
       };
     });
+  }
+
+  /** True when the file carries this framework's protocol. */
+  private carriesProtocol(fullPath: string): boolean {
+    try {
+      const content = fs.readFileSync(fullPath, 'utf8');
+      return content.includes(PROTOCOL_BEGIN) || /AGENTIC SDLC/i.test(content);
+    } catch {
+      return false;
+    }
   }
 
   private installProduct(id: AgentProductId, options: InstallIntegrationsOptions): WrittenFile[] {
@@ -300,7 +364,13 @@ export class AgentIntegrations {
     const existed = fs.existsSync(full);
 
     if (existed && !force && !this.isFrameworkOwned(full)) {
-      // A file the user (or another tool) authored is never silently overwritten.
+      // A file the user (or another tool) authored is never overwritten. When it
+      // is one of the files an agent reads for its standing instructions, the
+      // protocol is appended inside markers so their rules survive and the
+      // product is actually governed.
+      if (SHARED_INSTRUCTION_FILES.has(normalized)) {
+        return this.appendProtocol(full, normalized, product);
+      }
       return { path: normalized, action: 'preserved', product };
     }
 
@@ -311,11 +381,53 @@ export class AgentIntegrations {
     return { path: normalized, action: existed ? 'updated' : 'created', product };
   }
 
-  /** True when the existing file was generated by this framework. */
+  /**
+   * Adds (or refreshes) the protocol block inside a file owned by the project.
+   * The block is delimited, so re-running `agents sync` updates it in place and
+   * never duplicates it.
+   */
+  private appendProtocol(fullPath: string, normalized: string, product: AgentProductId): WrittenFile {
+    const existing = fs.readFileSync(fullPath, 'utf8');
+    const block = [
+      PROTOCOL_BEGIN,
+      '',
+      renderCompactProtocol({ processEngine: this.processEngine }),
+      '',
+      'Full protocol: `docs/ARCHITECTURE.md` and the `agentic` CLI (`agentic next` tells you the next step).',
+      '',
+      PROTOCOL_END,
+    ].join('\n');
+
+    const begin = existing.indexOf(PROTOCOL_BEGIN);
+    const end = existing.indexOf(PROTOCOL_END);
+
+    const updated =
+      begin !== -1 && end !== -1
+        ? `${existing.slice(0, begin)}${block}${existing.slice(end + PROTOCOL_END.length)}`
+        : `${existing.trimEnd()}\n\n---\n\n${block}\n`;
+
+    fs.writeFileSync(fullPath, updated, 'utf8');
+    this.written.add(normalized);
+
+    return { path: normalized, action: 'appended', product };
+  }
+
+  /**
+   * True when the framework generated the *whole* file, so regenerating it is
+   * safe.
+   *
+   * A file that merely carries the protocol block belongs to the project: it was
+   * appended to, and rewriting it wholesale would delete the team's own rules.
+   * That distinction is the difference between refreshing an integration and
+   * destroying someone's instructions on the second `agents sync`.
+   */
   private isFrameworkOwned(fullPath: string): boolean {
     try {
       const head = fs.readFileSync(fullPath, 'utf8').slice(0, 4000);
-      return /AGENTIC SDLC|Agentic SDLC/i.test(head);
+      if (head.includes(PROTOCOL_BEGIN)) return false;
+      return /AGENTIC SDLC ORCHESTRATOR|Agentic SDLC - Mandatory Workflow|^# \/agentic|^name: agentic$/im.test(
+        head
+      );
     } catch {
       return false;
     }

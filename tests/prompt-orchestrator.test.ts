@@ -34,7 +34,7 @@ describe('PromptOrchestrator', () => {
     }
   });
 
-  it('structures a prompt into BMAD, probes, ADRs and a Spec Kit contract, then hands work to an agent', async () => {
+  it('structures a prompt into probes, ADRs and a Spec Kit contract, then hands work to an agent', async () => {
     const runResult = await new PromptOrchestrator(tempDir).dispatchPrompt(
       'Implementar rota de checkout com cartao de credito'
     );
@@ -43,10 +43,8 @@ describe('PromptOrchestrator', () => {
     expect(runResult.status).toBe('AWAITING_AGENT');
     expect(runResult.verification).toBeUndefined();
 
-    // 1. BMAD briefing
-    expect(runResult.bmad_briefing?.metadata.engine).toBe('bmad-method');
-    const promptFiles = fs.readdirSync(path.join(tempDir, '.agentic', 'prompts'));
-    expect(promptFiles.some((f) => f.startsWith('BMAD-') && f.endsWith('.md'))).toBe(true);
+    // 1. A readable goal derived from the request itself
+    expect(runResult.work_package.goal.toLowerCase()).toContain('checkout');
 
     // 2. Probing, carried forward as explicit assumptions
     expect(runResult.grill_me?.probes.length).toBeGreaterThanOrEqual(4);

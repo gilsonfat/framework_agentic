@@ -52,16 +52,6 @@ export class ProviderInstaller {
         runtimeNotes: 'For Claude MCP: claude mcp add ruflo -- npx ruflo@latest mcp start',
       },
       {
-        name: 'BMAD Method (Business, Modeling, Architecture, Delivery)',
-        category: 'planner',
-        engine: providers.bmad?.engine || 'bmad-method',
-        // The native BMAD engine ships with this package; an external bmad-core
-        // plugin is only reported as present when it is actually on disk.
-        installed: this.isPluginPresent('bmad'),
-        installCommand: 'agy plugin install https://github.com/bmad-method/bmad-core',
-        runtimeNotes: 'Agile AI development framework: prompt refinement, domain modeling, architecture guardrails, and delivery slices.',
-      },
-      {
         name: 'GitHub Spec Kit (Spec-Driven Development / SDD)',
         category: 'specification',
         engine: providers.spec_kit?.engine || 'github-spec-kit',

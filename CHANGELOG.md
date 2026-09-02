@@ -2,6 +2,55 @@
 
 Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
+## [1.2.1] - 2026-09-02
+
+Correções encontradas ao testar adoção em **projeto já em andamento**.
+
+### Corrigido
+
+- **Produto de IA ficava sem governança e a CLI dizia o contrário.** Num repositório com
+  `AGENTS.md` próprio, o arquivo era preservado (correto) mas o protocolo nunca era
+  instalado — e `agentic agents` reportava `[wired]` mesmo assim. Agora o protocolo é
+  **anexado** dentro de marcadores (`BEGIN/END AGENTIC SDLC PROTOCOL`), preservando as
+  regras da casa, e o estado `partial` existe para o caso em que o arquivo existe sem o
+  protocolo. `doctor` avisa em **Ungoverned AI products**.
+- **Segunda sincronização apagava as regras do time.** Depois do primeiro append o arquivo
+  "parecia nosso" e era reescrito por inteiro. A detecção de propriedade passou a
+  distinguir *arquivo gerado pelo framework* de *arquivo do projeto com um bloco nosso*.
+- **`ROADMAP.md` existente era ignorado.** O ingestor só olhava `.planning/`; agora procura
+  também na raiz e em `docs/`, e os itens viram fases no roadmap.
+
+### Alterado
+
+- Item marcado `[x]` no roadmap legado é importado como **`planned` + `declared_complete`**,
+  nunca como concluído: um checkbox é declaração, não evidência. `agentic milestone status`
+  mostra `~ declared done by the previous roadmap; no evidence here yet`.
+- Fases importadas usam um espaço de ids próprio (`P-L01`) que não colide com os `P-###`
+  alocados pelo registro.
+- `vitest.config.ts`: timeout de 30s — os testes de integração criam projetos reais, rodam
+  git e sobem processos; 5s estourava sob paralelismo mesmo com tudo certo.
+
+## [1.2.0] - 2026-09-02
+
+### Removido
+
+- **Motor BMAD** (`bmad-engine.ts`, `types/bmad.ts`, provider `bmad`, briefings em
+  `.agentic/prompts/BMAD-*.md`). O briefing era gerado por heurística de palavra-chave:
+  saía praticamente o mesmo texto para qualquer pedido, e o que dele chegava ao ciclo era
+  título, escopo em prosa (descartado pelo filtro de globs) e três riscos fixos. Remover
+  eliminou ~600 linhas de template sem custar nenhum invariante.
+
+### Alterado
+
+- O título do work package e do contrato agora vem do próprio pedido (`deriveTitle`).
+- `scope.include` carrega **apenas** padrões de caminho reais — antes vinha misturado com
+  prosa que o compilador já descartava.
+- Os riscos do work package passam a ser exatamente as sondagens sem resposta humana.
+- `GrillMeEngine.grill(prompt, options)` e `DecisionRecorder.recordDecisions(runId, grill, options)`
+  perderam o parâmetro de briefing.
+- O Spec Kit continua gerando `SPEC/REQ/AC` e segue sustentando `policies.spec_required` e a
+  exigência de critério de aceite na verificação.
+
 ## [1.1.0] - 2026-09-02
 
 Reconstrução do núcleo. A versão 1.0.0 tinha a arquitetura certa e uma falha fatal: o orquestrador **fabricava a evidência** que seu próprio invariante exigia (`testOutput: 'PASS (mocked worker execution)'`), e o observer reportava `tests: pass` sem executar nada. Esta versão fecha esse buraco e amarra as pontas em volta dele.
@@ -65,4 +114,4 @@ Reconstrução do núcleo. A versão 1.0.0 tinha a arquitetura certa e uma falha
 
 ## [1.0.0]
 
-Versão inicial: ciclo de 12 etapas, máquina de estados em YAML, compilador de DAG, engines BMAD/Grill-Me/Spec Kit e scaffolding `.agentic/`.
+Versão inicial: ciclo de 12 etapas, máquina de estados em YAML, compilador de DAG, engines de briefing/Grill-Me/Spec Kit e scaffolding `.agentic/`.

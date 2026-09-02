@@ -170,15 +170,18 @@ describe('AgentIntegrations (one workflow, every AI product)', () => {
     expect(settings.hooks).toBeUndefined();
   });
 
-  it('preserves a hand-written instruction file unless forced', () => {
+  it('keeps a hand-written instruction file and appends the protocol to it', () => {
     fs.writeFileSync(path.join(tempDir, 'AGENTS.md'), '# Our own house rules\n', 'utf8');
 
     const first = new AgentIntegrations(tempDir).install({
       processEngine: 'superpowers',
       products: ['antigravity'],
     });
-    expect(first[0].files.find((f) => f.path === 'AGENTS.md')?.action).toBe('preserved');
-    expect(read('AGENTS.md')).toBe('# Our own house rules\n');
+    // Their rules survive, and the product is actually governed: skipping the file
+    // would leave Antigravity and Codex reading nothing about the workflow.
+    expect(first[0].files.find((f) => f.path === 'AGENTS.md')?.action).toBe('appended');
+    expect(read('AGENTS.md')).toContain('# Our own house rules');
+    expect(read('AGENTS.md')).toContain('BEGIN AGENTIC SDLC PROTOCOL');
 
     const forced = new AgentIntegrations(tempDir).install({
       processEngine: 'superpowers',
@@ -186,7 +189,7 @@ describe('AgentIntegrations (one workflow, every AI product)', () => {
       force: true,
     });
     expect(forced[0].files.find((f) => f.path === 'AGENTS.md')?.action).toBe('updated');
-    expect(read('AGENTS.md')).toContain('AGENTIC SDLC');
+    expect(read('AGENTS.md')).toContain('AGENTIC SDLC ORCHESTRATOR');
   });
 
   it('refreshes a file the framework itself generated, without --force', () => {

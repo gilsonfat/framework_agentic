@@ -42,11 +42,10 @@ Nenhuma das três caixas faz o trabalho da outra. A CLI **não escreve código**
 | `core/reconciler.ts` | Declarado × observado; `syncDeclaredState` aplica o observado sobre o declarado |
 | `core/artifact-schema.ts` / `migrator.ts` / `artifact-validator.ts` | Versão dos artefatos, migração honesta e validação contra os JSON Schemas |
 
-### Refinamento e decisão
+### Especificação e decisão
 
 | Módulo | Responsabilidade |
 | :--- | :--- |
-| `core/bmad-engine.ts` | Briefing estruturado (Business, Modeling, Architecture, Delivery) |
 | `core/grill-me-engine.ts` | Sondagem adversarial; separa **decisão** de **suposição** |
 | `core/decision-recorder.ts` | ADRs sequenciais; `PROPOSED` enquanto houver suposição |
 | `core/spec-engine.ts` | Contrato Spec Kit (`SPEC/REQ/AC`, Given-When-Then) |
@@ -144,6 +143,6 @@ Todo artefato carrega `schema_version`. Ver [versionamento no README](../README.
 
 **Por que `BLOCKED` não é `FAIL`.** Recusar fechamento por falta de evidência é diferente de ter evidência de falha. Fundir os dois esconderia o caso mais perigoso: o que ninguém mediu.
 
-**Por que a decomposição não é automática.** Dividir um épico é decisão de projeto. O framework compila a divisão declarada (`--split`) e serializa o que colide; inventar fatias seria repetir o erro do BMAD template.
+**Por que a decomposição não é automática.** Dividir um épico é decisão de projeto. O framework compila a divisão declarada (`--split`) e serializa o que colide; inventar fatias seria repetir o erro do briefing gerado por template, removido na 1.2.0.
 
 **Por que a limpeza de worktree preserva branches.** Podem conter trabalho não mesclado; apagar commit alheio para arrumar a casa contradiz o resto do framework.

@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import { BmadBriefing } from '../types/bmad.js';
 import { DecisionRecord } from '../types/decision.js';
 import { GitHubSpecKitDocument, SpecKitRequirement } from '../types/spec-kit.js';
 
@@ -24,7 +23,8 @@ export interface GenerateSpecKitOptions {
   phaseId: string;
   milestone?: string;
   promptText?: string;
-  bmad?: BmadBriefing;
+  /** Short title for the contract; defaults to the prompt text. */
+  title?: string;
   decisions?: DecisionRecord[];
 }
 
@@ -67,12 +67,12 @@ export class SpecEngine {
    */
   public generateGitHubSpecKit(options: GenerateSpecKitOptions): GitHubSpecKitDocument {
     const reqNum = options.reqId.replace('REQ-', '');
-    const title = options.bmad ? options.bmad.title : options.promptText || `Specification ${options.reqId}`;
+    const title = options.title || options.promptText || `Specification ${options.reqId}`;
     const milestone = options.milestone || 'M01';
     const phase = options.phaseId || `P-${reqNum}`;
     const dateStr = new Date().toISOString();
 
-    const rawPrompt = options.bmad ? options.bmad.raw_prompt : options.promptText || title;
+    const rawPrompt = options.promptText || title;
     const decisionsRefs = (options.decisions || []).map((d) => d.id);
 
     const specReq: SpecKitRequirement = {
@@ -125,7 +125,7 @@ export class SpecEngine {
       milestone,
       phase,
       overview: {
-        problem_statement: options.bmad ? options.bmad.business.objective : `Fulfill requirement: ${rawPrompt}`,
+        problem_statement: `Fulfill requirement: ${rawPrompt}`,
         target_outcomes: [
           'High testability with 100% automated assertion evidence',
           'Production-grade error handling and security boundaries',
@@ -135,8 +135,8 @@ export class SpecEngine {
           `Story 1: Enable ${title} capability with full test coverage`,
         ],
         boundaries: {
-          in_scope: options.bmad ? options.bmad.business.scope_in : [`Implementation of ${rawPrompt}`, 'Automated TDD tests'],
-          out_of_scope: options.bmad ? options.bmad.business.scope_out : ['Unrelated refactorings outside feature boundary'],
+          in_scope: [`Implementation of ${rawPrompt}`, 'Automated tests covering every acceptance criterion'],
+          out_of_scope: ['Unrelated refactorings outside the feature boundary'],
         },
       },
       contracts: {
@@ -154,17 +154,11 @@ export class SpecEngine {
       },
       requirements: [specReq],
       non_functional_requirements: {
-        security: options.bmad ? options.bmad.architecture.security_boundaries : ['Strict input sanitization', 'Zero plain-text secrets in code'],
-        performance: options.bmad ? options.bmad.architecture.performance_nfrs : ['P95 response time < 150ms'],
+        security: ['Strict input sanitization', 'Zero plain-text secrets in code'],
+        performance: ['P95 response time < 150ms'],
         reliability: ['Deterministic unit test execution with zero intermittent flakes'],
       },
       decisions_log: decisionsRefs,
-      bmad_reference: options.bmad
-        ? {
-            briefing_title: options.bmad.title,
-            engine: options.bmad.metadata.engine,
-          }
-        : undefined,
       created_at: dateStr,
     };
 
@@ -181,7 +175,7 @@ export class SpecEngine {
 > **Milestone**: ${doc.milestone} | **Phase**: ${doc.phase}  
 > **Status**: ${doc.status} | **Version**: ${doc.version}  
 > **Created At**: ${doc.created_at}  
-${doc.bmad_reference ? `> **BMAD Reference**: ${doc.bmad_reference.briefing_title} (${doc.bmad_reference.engine})\n` : ''}
+
 ${doc.decisions_log.length > 0 ? `> **Linked ADR Decisions**: ${doc.decisions_log.join(', ')}\n` : ''}
 
 ---

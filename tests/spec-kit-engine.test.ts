@@ -3,17 +3,14 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { SpecEngine } from '../src/core/spec-engine.js';
-import { BmadEngine } from '../src/core/bmad-engine.js';
 
 describe('SpecEngine (GitHub Spec Kit & TLC Integration)', () => {
   let tempDir: string;
   let specEngine: SpecEngine;
-  let bmadEngine: BmadEngine;
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'spec-kit-test-'));
     specEngine = new SpecEngine(tempDir);
-    bmadEngine = new BmadEngine(tempDir);
   });
 
   afterEach(() => {
@@ -22,15 +19,18 @@ describe('SpecEngine (GitHub Spec Kit & TLC Integration)', () => {
     }
   });
 
-  it('should generate a complete GitHub Spec Kit document from prompt and BMAD briefing', () => {
+  it('should generate a complete GitHub Spec Kit document from the request', () => {
     const raw = 'Implementar rota de autenticação JWT';
-    const briefing = bmadEngine.enhancePrompt(raw);
     const doc = specEngine.generateGitHubSpecKit({
       reqId: 'REQ-456',
       phaseId: 'P-456',
       milestone: 'M01',
-      bmad: briefing,
+      promptText: raw,
+      title: 'Rota de autenticação JWT',
     });
+
+    expect(doc.title).toBe('Rota de autenticação JWT');
+    expect(doc.overview.problem_statement).toContain(raw);
 
     expect(doc.spec_id).toBe('SPEC-456');
     expect(doc.status).toBe('PLANNED');

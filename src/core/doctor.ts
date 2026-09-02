@@ -18,7 +18,6 @@ import { Migrator } from './migrator.js';
  * degradation rather than a broken setup.
  */
 const NATIVE_ROLES = new Set([
-  'bmad',
   'spec_kit',
   'decision_ledger',
   'specification',
@@ -395,8 +394,9 @@ export class Doctor {
 
   private checkAgentIntegrations(): DoctorCheckItem[] {
     const status = new AgentIntegrations(this.projectRoot).status();
-    const wired = status.filter((s) => s.installed);
-    const detectedButMissing = status.filter((s) => !s.installed && s.detected);
+    const wired = status.filter((s) => s.state === 'installed');
+    const partial = status.filter((s) => s.state === 'partial');
+    const detectedButMissing = status.filter((s) => s.state === 'missing' && s.detected);
 
     const checks: DoctorCheckItem[] = [
       {
@@ -408,6 +408,18 @@ export class Doctor {
             : `${wired.length} wired: ${wired.map((s) => s.definition.label).join(', ')}`,
       },
     ];
+
+    // The dangerous case: the file exists, so nothing looks broken, but the
+    // product reads none of the protocol.
+    if (partial.length > 0) {
+      checks.push({
+        name: 'Ungoverned AI products',
+        status: 'WARN',
+        details: `${partial
+          .map((s) => `${s.definition.label} (${s.withoutProtocol.join(', ')} without protocol)`)
+          .join('; ')} - run \`agentic agents sync\``,
+      });
+    }
 
     // A product that is clearly in use here but has no instruction file will
     // silently bypass the whole workflow, so it is worth calling out.

@@ -31,8 +31,8 @@ export function renderWorkspaceRules(options: RulesTemplateOptions): string {
   return `# AGENTIC SDLC ORCHESTRATOR - WORKSPACE INSTRUCTIONS
 
 > **MANDATORY FOR EVERY AI ASSISTANT AND CODING AGENT** (Claude Code, Antigravity/Gemini, Codex, Cursor, humans included).
-> This repository is governed by the Agentic SDLC Orchestrator: BMAD refinement, Grill-Me probing,
-> ADR decisions, Spec Kit contracts, strict TDD, and **evidence-gated closure**.
+> This repository is governed by the Agentic SDLC Orchestrator: Grill-Me probing, ADR
+> decisions, Spec Kit contracts, strict TDD, and **evidence-gated closure**.
 
 ---
 
@@ -108,7 +108,7 @@ DONE until \`agentic verify\` collects an evidence record from a real test execu
 
 1. **OBSERVE** - real git/test/migration state (\`agentic observe --tests\` measures the suite).
 2. **RECONCILE** - declared vs observed; \`--sync\` rewrites the declaration from reality.
-3. **REFINE & PROBE** - BMAD briefing, Grill-Me probes, ADRs in \`.agentic/specs/decisions/\`.
+3. **PROBE & DECIDE** - Grill-Me probes and ADRs in \`.agentic/specs/decisions/\`.
 4. **PLAN & SPECIFY** - work package plus Spec Kit contract in \`.agentic/specs/planned/\`.
 5. **HUMAN GATES** - evaluated before any dispatch; pending gates stop the run.
 6. **COMPILE DAG** - Kahn ordering, cycle detection, write-conflict detection.
@@ -170,7 +170,7 @@ Currently mapped (\`mattpocock/skills\`):
 
 | Stage | Skill | Use it to |
 | :--- | :--- | :--- |
-| refine | \`/grill-with-docs\`, \`/domain-modeling\` | deepen the BMAD briefing and the terminology |
+| refine | \`/grill-with-docs\`, \`/domain-modeling\` | deepen the domain understanding and the terminology |
 | probe | \`/grill-me\`, \`/grilling\` | run the live interview over the open probes |
 | specify | \`/to-spec\` | enrich the generated SPEC (registry ids stay authoritative) |
 | architect | \`/codebase-design\`, \`/improve-codebase-architecture\` | module boundaries and refactoring opportunities |
@@ -228,7 +228,7 @@ export function renderAgentSkill(options: RulesTemplateOptions): string {
 
   return `---
 name: agentic
-description: Deliver any task, feature, bugfix or refactoring through the Agentic SDLC cycle - BMAD refinement, Grill-Me probing, ADR decisions, Spec Kit contracts, DAG dispatch, strict TDD, 4-layer review, evidence-gated verification and as-built documentation.
+description: Deliver any task, feature, bugfix or refactoring through the Agentic SDLC cycle - Grill-Me probing, ADR decisions, Spec Kit contracts, DAG dispatch, strict TDD, 4-layer review, evidence-gated verification and as-built documentation.
 ---
 
 # Agentic SDLC Orchestrator Skill

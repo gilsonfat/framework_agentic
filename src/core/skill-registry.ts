@@ -17,8 +17,8 @@ import { ConfigLoader } from './config-loader.js';
  * Two rules keep this honest:
  *  - a pack is only recommended as usable when it is *detected on disk*; an
  *    absent pack is reported with its install command instead of being assumed;
- *  - no stage ever depends on a pack. The framework's native path (BMAD briefing,
- *    Grill-Me probes, Spec Kit contract, evidence-gated verification) runs either
+ *  - no stage ever depends on a pack. The framework's native path (Grill-Me probes,
+ *    Spec Kit contract, evidence-gated verification) runs either
  *    way, so a teammate without the pack installed is degraded, never blocked.
  */
 export interface SkillRegistryOptions {

@@ -68,9 +68,16 @@ export class PlanningIngestor {
       }
     }
 
-    // 2. Read ROADMAP.md for executed and pending phases/tasks
-    const roadmapFile = path.join(planningDir, 'ROADMAP.md');
-    if (fs.existsSync(roadmapFile)) {
+    // 2. Read the roadmap for executed and pending phases/tasks.
+    // A project already in progress usually keeps it at the repository root or
+    // under docs/, not inside `.planning/`, so all three are considered.
+    const roadmapFile = [
+      path.join(planningDir, 'ROADMAP.md'),
+      path.join(this.projectRoot, 'ROADMAP.md'),
+      path.join(this.projectRoot, 'docs', 'ROADMAP.md'),
+    ].find((candidate) => fs.existsSync(candidate));
+
+    if (roadmapFile) {
       try {
         const lines = fs.readFileSync(roadmapFile, 'utf8').split('\n');
         for (const line of lines) {
@@ -98,9 +105,14 @@ export class PlanningIngestor {
       }
     }
 
-    // 3. Read REQUIREMENTS.md if present
-    const reqFile = path.join(planningDir, 'REQUIREMENTS.md');
-    if (fs.existsSync(reqFile)) {
+    // 3. Read REQUIREMENTS.md if present, in the same set of places.
+    const reqFile = [
+      path.join(planningDir, 'REQUIREMENTS.md'),
+      path.join(this.projectRoot, 'REQUIREMENTS.md'),
+      path.join(this.projectRoot, 'docs', 'REQUIREMENTS.md'),
+    ].find((candidate) => fs.existsSync(candidate));
+
+    if (reqFile) {
       try {
         const lines = fs.readFileSync(reqFile, 'utf8').split('\n');
         let counter = 1;

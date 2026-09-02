@@ -267,11 +267,6 @@ export class SetupOrchestrator {
           required: true,
         };
 
-        parsed.providers.bmad = {
-          engine: 'bmad-method',
-          required: true,
-        };
-
         parsed.providers.spec_kit = {
           engine: 'github-spec-kit',
           required: true,
@@ -310,7 +305,7 @@ export class SetupOrchestrator {
         console.log(
           `+ Configured providers.yaml (Process: ${cfg.processEngine}, Planner: ${
             cfg.enableGsd ? 'gsd' : 'native'
-          }, BMAD: bmad-method, SpecKit: github-spec-kit, Execution: ${cfg.executionMode || 'delegated'})`
+          }, SpecKit: github-spec-kit, Execution: ${cfg.executionMode || 'delegated'})`
         );
       } catch (e) {
         console.warn('! Note: Could not update providers.yaml:', (e as Error).message);

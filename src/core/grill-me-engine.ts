@@ -1,5 +1,4 @@
 import path from 'path';
-import { BmadBriefing } from '../types/bmad.js';
 import { GrillMeQuestion, GrillMeResult } from '../types/decision.js';
 
 export interface GrillMeOptions {
@@ -8,6 +7,8 @@ export interface GrillMeOptions {
   userAnswers?: Record<string, string>;
   /** Identity credited for the answers, for ADR authorship. */
   answeredBy?: string;
+  /** Explicit domain; inferred from the prompt when absent. */
+  domain?: string;
 }
 
 export class GrillMeEngine {
@@ -18,13 +19,13 @@ export class GrillMeEngine {
   }
 
   /**
-   * Runs the Grill-Me clarification and adversarial interrogation workflow on a prompt / BMAD briefing.
+   * Runs the Grill-Me clarification and adversarial interrogation workflow on a request.
    */
-  public grill(prompt: string, bmad?: BmadBriefing, options: GrillMeOptions = {}): GrillMeResult {
+  public grill(prompt: string, options: GrillMeOptions = {}): GrillMeResult {
     const trimmed = prompt.trim();
-    const domain = bmad ? this.inferDomainFromBriefing(bmad) : this.inferDomain(trimmed);
+    const domain = options.domain || this.inferDomain(trimmed);
 
-    const probes = this.generateProbes(trimmed, domain, bmad, options.userAnswers, options.answeredBy);
+    const probes = this.generateProbes(trimmed, domain, options.userAnswers, options.answeredBy);
 
     // A probe answered by the engine's own default is an ASSUMPTION, not a decision.
     // Reporting defaults as "resolved decisions" is what turns adversarial probing
@@ -97,7 +98,6 @@ export class GrillMeEngine {
   private generateProbes(
     prompt: string,
     domain: string,
-    bmad?: BmadBriefing,
     userAnswers: Record<string, string> = {},
     answeredBy?: string
   ): GrillMeQuestion[] {
@@ -251,22 +251,6 @@ export class GrillMeEngine {
     return `Interrogated "${prompt}" across ${probes.length} dimensions (input validation, failure modes, domain trade-offs, security, testability). ${answered} answered by a human; ${assumed} running on engine defaults that remain unconfirmed assumptions.`;
   }
 
-  private inferDomainFromBriefing(bmad: BmadBriefing): string {
-    const title = (bmad.title + ' ' + bmad.raw_prompt).toLowerCase();
-    if (title.includes('auth') || title.includes('jwt') || title.includes('token') || title.includes('security')) {
-      return 'security';
-    }
-    if (title.includes('pagamento') || title.includes('billing') || title.includes('stripe') || title.includes('webhook')) {
-      return 'billing';
-    }
-    if (title.includes('database') || title.includes('banco') || title.includes('migration')) {
-      return 'database';
-    }
-    if (title.includes('ui') || title.includes('frontend') || title.includes('tela') || title.includes('component')) {
-      return 'frontend';
-    }
-    return 'backend';
-  }
 
   private inferDomain(prompt: string): string {
     const lower = prompt.toLowerCase();

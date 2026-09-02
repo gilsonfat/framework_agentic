@@ -7,6 +7,7 @@ import { TeamCoordinator } from './team.js';
 import { ARTIFACT_SCHEMA_VERSION } from './artifact-schema.js';
 import { ModuleDetector } from './module-detector.js';
 import { PlanningIngestor } from './planning-ingestor.js';
+import { MilestoneManager } from './milestone-manager.js';
 
 export interface ScaffoldOptions {
   force?: boolean;
@@ -190,6 +191,22 @@ export class Scaffolder {
     const planningIngestor = new PlanningIngestor(targetProjectRoot);
     const ingested = planningIngestor.ingest();
     const applyResult = planningIngestor.applyPlanningState(ingested);
+
+    // A project already in progress usually has a roadmap. Importing it means the
+    // team's plan enters the cycle instead of being ignored next to an empty one.
+    const roadmapItems = [
+      ...ingested.executedPhases.map((phase) => ({ title: phase.name, completed: true })),
+      ...ingested.pendingPhases.map((phase) => ({ title: phase.name, completed: false })),
+    ];
+    if (roadmapItems.length > 0) {
+      const importedPhases = new MilestoneManager(targetProjectRoot).importFromPlanning(
+        roadmapItems,
+        ingested.migratedLegacyDocs[0] || 'ROADMAP.md'
+      );
+      if (importedPhases.length > 0) {
+        createdFiles.push('.agentic/planning/roadmap.yaml');
+      }
+    }
     for (const file of applyResult.updatedRoadmaps) {
       if (!createdFiles.includes(file)) {
         createdFiles.push(file);
@@ -237,7 +254,6 @@ export class Scaffolder {
           srcPath.includes('history') ||
           srcPath.includes('runs') ||
           entry.name.endsWith('.log') ||
-          entry.name.startsWith('BMAD-') ||
           entry.name.startsWith('RUN-')
         ) {
           continue;
