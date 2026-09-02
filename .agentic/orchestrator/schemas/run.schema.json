@@ -12,7 +12,7 @@
   "properties": {
     "run_id": {
       "type": "string",
-      "pattern": "^RUN-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9A-Za-z_-]+$"
+      "pattern": "^RUN-[0-9A-Za-z_-]+$"
     },
     "status": {
       "type": "string",
@@ -27,6 +27,7 @@
         "COMPILING",
         "EXECUTION_READY",
         "EXECUTING",
+        "AWAITING_AGENT",
         "REVIEWING",
         "VERIFYING",
         "REMEDIATING",
@@ -39,39 +40,117 @@
         "STOPPED"
       ]
     },
-    "started_at": { "type": "string", "format": "date-time" },
-    "finished_at": { "type": "string", "format": "date-time" },
-    "baseline_commit": { "type": "string" },
-    "result_commit": { "type": "string" },
-    "initial_observed_state": { "type": "object" },
-    "work_package": { "type": "object" },
-    "spec": { "type": "object" },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "finished_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "baseline_commit": {
+      "type": "string"
+    },
+    "result_commit": {
+      "type": "string"
+    },
+    "initial_observed_state": {
+      "type": "object"
+    },
+    "work_package": {
+      "type": "object"
+    },
+    "spec": {
+      "type": "object"
+    },
     "tasks": {
       "type": "array",
-      "items": { "type": "object" }
+      "items": {
+        "type": "object"
+      }
     },
-    "dag": { "type": "object" },
+    "dag": {
+      "type": "object"
+    },
     "agents": {
       "type": "array",
-      "items": { "type": "object" }
+      "items": {
+        "type": "object"
+      }
     },
     "worktrees": {
       "type": "array",
-      "items": { "type": "string" }
+      "items": {
+        "type": "string"
+      }
     },
     "commits": {
       "type": "array",
-      "items": { "type": "string" }
+      "items": {
+        "type": "string"
+      }
     },
-    "tests": { "type": "object" },
-    "review": { "type": "object" },
-    "verification": { "type": "object" },
+    "tests": {
+      "type": "object"
+    },
+    "review": {
+      "type": "object"
+    },
+    "verification": {
+      "type": "object"
+    },
     "remediations": {
       "type": "array",
-      "items": { "type": "object" }
+      "items": {
+        "type": "object"
+      }
     },
-    "reconciliation": { "type": "object" },
-    "as_built": { "type": "object" },
-    "resulting_state": { "type": "object" }
+    "reconciliation": {
+      "type": "object"
+    },
+    "as_built": {
+      "type": "object"
+    },
+    "resulting_state": {
+      "type": "object"
+    },
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Artifact schema version. Absent means v1 (written before versioning existed)."
+    },
+    "evidence": {
+      "type": "object",
+      "description": "Executed evidence record backing (or refusing) closure."
+    },
+    "routing": {
+      "type": "object",
+      "description": "Complexity assessment and resolved providers."
+    },
+    "dispatch": {
+      "type": "object",
+      "description": "Prompt packs handed to the agent and results reported back."
+    },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "bmad_briefing": {
+      "type": "object"
+    },
+    "grill_me": {
+      "type": "object"
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "spec_kit": {
+      "type": "object"
+    }
   }
 }

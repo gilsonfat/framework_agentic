@@ -15,6 +15,8 @@ export interface RunAgentAssignment {
 }
 
 export interface RunDescriptor {
+  /** Artifact schema version; absent means it predates versioning (v1). */
+  schema_version?: number;
   run_id: string;
   status: OrchestratorState;
   started_at: string;

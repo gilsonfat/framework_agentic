@@ -7,6 +7,7 @@ import { TaskResult } from '../types/execution.js';
 import { GateKeeper } from './gate-keeper.js';
 import { TeamCoordinator } from './team.js';
 import { EvidenceCollector } from './evidence-collector.js';
+import { ARTIFACT_SCHEMA_VERSION, isCurrent, isFromFuture, versionOf } from './artifact-schema.js';
 
 export interface StatusDashboardData {
   runId: string;
@@ -27,6 +28,8 @@ export interface StatusDashboardData {
   leases: string[];
   blockers: string[];
   nextAction: string;
+  /** Set when the current run artifact was written by another schema version. */
+  schemaMismatch?: { found: number; expected: number; direction: 'legacy' | 'future' };
 }
 
 /**
@@ -67,6 +70,29 @@ export class StatusDashboard {
     const run = this.readJson<RunDescriptor>(
       path.join(this.projectRoot, '.agentic', 'execution', 'current-run.json')
     );
+    if (run && !isCurrent(run)) {
+      // Reading a run from another schema version with today's assumptions is
+      // exactly how a stale COMPLETE ends up shadowing awaiting tasks.
+      data.runId = run.run_id || data.runId;
+      data.state = isFromFuture(run) ? 'UNREADABLE (newer schema)' : 'LEGACY (older schema)';
+      data.milestone = run.work_package?.milestone || data.milestone;
+      data.phase = run.work_package?.phase || data.phase;
+      data.schemaMismatch = {
+        found: versionOf(run),
+        expected: ARTIFACT_SCHEMA_VERSION,
+        direction: isFromFuture(run) ? 'future' : 'legacy',
+      };
+      data.blockers = [
+        isFromFuture(run)
+          ? 'This run was written by a newer build of the framework. Update the CLI before continuing.'
+          : 'This run predates the current artifact schema, so its status cannot be trusted.',
+      ];
+      data.nextAction = isFromFuture(run)
+        ? 'Update the agentic CLI to a build that understands this artifact.'
+        : 'Reconcile the old artifacts: agentic migrate --apply';
+      return data;
+    }
+
     if (run) {
       data.runId = run.run_id || data.runId;
       data.state = run.status || data.state;
@@ -188,6 +214,12 @@ export class StatusDashboard {
     if (d.leases.length > 0) {
       lines.push('', 'Active claims');
       for (const lease of d.leases) lines.push(`  - ${lease}`);
+    }
+    if (d.schemaMismatch) {
+      lines.push(
+        '',
+        `Schema        artifact v${d.schemaMismatch.found}, this build expects v${d.schemaMismatch.expected}`
+      );
     }
     if (d.blockers.length > 0) {
       lines.push('', 'Blockers');

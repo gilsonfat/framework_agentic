@@ -15,54 +15,105 @@
       "type": "string",
       "pattern": "^VER-[0-9A-Za-z_-]+$"
     },
-    "run_id": { "type": "string" },
+    "run_id": {
+      "type": "string"
+    },
     "status": {
       "type": "string",
-      "enum": ["PASS", "FAIL", "PARTIAL"]
+      "enum": [
+        "PASS",
+        "FAIL",
+        "PARTIAL",
+        "BLOCKED"
+      ]
     },
-    "timestamp": { "type": "string", "format": "date-time" },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
     "verifier_type": {
       "type": "string",
-      "enum": ["fresh_context", "local", "automated"]
+      "enum": [
+        "fresh_context",
+        "local",
+        "automated"
+      ]
     },
     "requirements_checked": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["requirement_id", "status"],
+        "required": [
+          "requirement_id",
+          "status"
+        ],
         "properties": {
-          "requirement_id": { "type": "string" },
+          "requirement_id": {
+            "type": "string"
+          },
           "status": {
             "type": "string",
-            "enum": ["verified", "failed", "untested"]
+            "enum": [
+              "verified",
+              "failed",
+              "untested"
+            ]
           },
           "acceptance_criteria_passed": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "acceptance_criteria_failed": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "findings": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           }
         }
       }
     },
     "evidence": {
       "type": "object",
-      "required": ["tests_passed", "tests_failed"],
+      "required": [
+        "tests_passed",
+        "tests_failed"
+      ],
       "properties": {
-        "tests_passed": { "type": "integer" },
-        "tests_failed": { "type": "integer" },
-        "test_suite_output": { "type": "string" },
+        "tests_passed": {
+          "type": "integer"
+        },
+        "tests_failed": {
+          "type": "integer"
+        },
+        "test_suite_output": {
+          "type": "string"
+        },
         "artifacts": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         }
       }
+    },
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Artifact schema version. Absent means v1 (written before versioning existed)."
+    },
+    "verified_by": {
+      "type": "string"
+    },
+    "authored_by": {
+      "type": "string"
     }
   }
 }

@@ -1,6 +1,7 @@
 import { ComplexityLevel } from './config.js';
 
 export interface WorkPackage {
+  schema_version?: number;
   run_id: string;
   milestone: string;
   phase: string;

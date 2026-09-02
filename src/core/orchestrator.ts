@@ -19,6 +19,7 @@ import { GateKeeper } from './gate-keeper.js';
 import { AgentBridge } from './agent-bridge.js';
 import { TeamCoordinator } from './team.js';
 import { IdRegistry } from './id-registry.js';
+import { ARTIFACT_SCHEMA_VERSION, isCurrent, stampVersion } from './artifact-schema.js';
 import { RunDescriptor } from '../types/run.js';
 import { WorkPackage, TaskContract, TaskDAGNode } from '../types/task.js';
 import { BmadBriefing } from '../types/bmad.js';
@@ -46,6 +47,19 @@ export interface OrchestrationOptions {
   force?: boolean;
   /** Resume an existing run parked in AWAITING_AGENT instead of starting a new one. */
   resume?: boolean;
+}
+
+/**
+ * Keeps only the entries of a work package scope that are really path patterns.
+ *
+ * `scope.include` mixes machine-generated globs (from the module detector) with
+ * prose from the BMAD briefing, so writing all of it into `ownership.write`
+ * would produce nonsense boundaries.
+ */
+function toGlobs(entries: string[] | undefined): string[] {
+  return (entries || [])
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0 && !/\s/.test(entry) && (entry.includes('/') || entry.includes('*')));
 }
 
 /** Paths no task may ever write, regardless of its declared ownership. */
@@ -125,9 +139,27 @@ export class Orchestrator {
     }
   }
 
+  /**
+   * A run written by an older (or newer) build cannot be resumed or closed with
+   * the current rules: its fields mean something else. Refusing beats guessing.
+   */
+  public isRunCompatible(run: RunDescriptor | undefined): boolean {
+    return Boolean(run) && isCurrent(run);
+  }
+
   public async runCycle(options: OrchestrationOptions = {}): Promise<RunDescriptor> {
     const parked = this.loadCurrentRun();
-    if ((options.resume ?? true) && parked?.status === 'AWAITING_AGENT' && !options.runId) {
+    if (parked && !this.isRunCompatible(parked) && (options.resume ?? true) && !options.runId) {
+      // Do not resume across a schema change; start clean instead of misreading it.
+      this.auditLogger.emit('SYSTEM', 'RUN_BLOCKED', {
+        metadata: {
+          reason: 'incompatible run artifact',
+          run: parked.run_id,
+          schema_version: parked.schema_version ?? 1,
+          expected: ARTIFACT_SCHEMA_VERSION,
+        },
+      });
+    } else if ((options.resume ?? true) && parked?.status === 'AWAITING_AGENT' && !options.runId) {
       return this.closeCycle(parked, options);
     }
 
@@ -503,6 +535,13 @@ export class Orchestrator {
     const domain = workPackage.expected_domains[0] || 'backend';
     const nodes: TaskDAGNode[] = [];
 
+    // Ownership follows the work package scope. Without this, a monorepo task
+    // was handed `src/**` and could legitimately write anywhere in the tree,
+    // which makes the isolated-ownership invariant decorative.
+    const scopedWrites = toGlobs(workPackage.scope?.include);
+    const writePaths = scopedWrites.length > 0 ? scopedWrites : ['src/**', 'tests/**'];
+    const excluded = toGlobs(workPackage.scope?.exclude);
+
     const specRequirements = spec?.requirements || [];
     const requirementIds =
       workPackage.requirements.length > 0
@@ -525,9 +564,9 @@ export class Orchestrator {
         // boundaries are explicit, and the compiler flags overlapping writes.
         dependencies: index > 0 ? [`TASK-${String(index).padStart(3, '0')}`] : [],
         ownership: {
-          write: [`src/**`, `tests/**`],
+          write: writePaths,
           readonly: ['.agentic/specs/**', 'package.json'],
-          forbidden: GLOBAL_FORBIDDEN_PATHS,
+          forbidden: [...GLOBAL_FORBIDDEN_PATHS, ...excluded],
         },
       });
     });
@@ -541,9 +580,9 @@ export class Orchestrator {
         acceptance_criteria: [],
         dependencies: [],
         ownership: {
-          write: ['src/**', 'tests/**'],
+          write: writePaths,
           readonly: ['.agentic/specs/**'],
-          forbidden: GLOBAL_FORBIDDEN_PATHS,
+          forbidden: [...GLOBAL_FORBIDDEN_PATHS, ...excluded],
         },
       });
     }
@@ -597,7 +636,7 @@ export class Orchestrator {
       fs.mkdirSync(runsDir, { recursive: true });
     }
 
-    const serialized = JSON.stringify(run, null, 2);
+    const serialized = JSON.stringify(stampVersion(run), null, 2);
     fs.writeFileSync(path.join(execDir, 'current-run.json'), serialized, 'utf8');
     fs.writeFileSync(path.join(runsDir, 'run.json'), serialized, 'utf8');
   }

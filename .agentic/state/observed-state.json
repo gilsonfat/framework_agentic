@@ -175,5 +175,6 @@
     "Test status was not measured in this observation; no requirement may be closed from it."
   ],
   "blockers": [],
-  "timestamp": "2026-09-02T14:39:12.389Z"
+  "timestamp": "2026-09-02T14:39:12.389Z",
+  "schema_version": 2
 }

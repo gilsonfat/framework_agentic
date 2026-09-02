@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: build + test (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '22']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+      - name: Test suite
+        run: npm test
+
+  self-check:
+    name: the framework checks itself
+    runs-on: ubuntu-latest
+    needs: build-and-test
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The audit chain and the observer read real git history.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      # A framework whose core promise is "evidence, not claims" has to hold
+      # itself to the same standard on every push.
+      - name: Artifacts are on the current schema
+        run: node bin/agentic.js migrate
+
+      - name: Audit chain integrity
+        run: node bin/agentic.js audit verify
+
+      - name: Readiness diagnostics
+        run: node bin/agentic.js doctor
+
+  smoke-install:
+    name: smoke - init a fresh project
+    runs-on: ubuntu-latest
+    needs: build-and-test
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      - name: Initialize a throwaway project and run the two-phase flow
+        run: |
+          set -euo pipefail
+          AGENTIC="$PWD/bin/agentic.js"
+          mkdir -p /tmp/smoke && cd /tmp/smoke
+          git init -q .
+          git config user.email ci@example.com
+          git config user.name CI
+          printf '{ "name": "smoke", "type": "module", "scripts": { "test": "node --test" } }' > package.json
+          mkdir -p tests
+          printf "import { test } from 'node:test';\nimport assert from 'node:assert';\ntest('ok', () => assert.equal(1, 1));\n" > tests/smoke.test.js
+
+          node "$AGENTIC" init --agents claude
+          node "$AGENTIC" doctor
+
+          node "$AGENTIC" prompt "Criar rota de listagem de produtos"
+          test -f .agentic/execution/inbox/TASK-001.md
+
+          node "$AGENTIC" report TASK-001 --status completed --files "src/products.js" --commit HEAD
+          node "$AGENTIC" verify
+
+          # The requirement must be closed against real evidence, not a claim.
+          node -e "
+            const m = require('./.agentic/verification/requirement-matrix.json');
+            const closed = Object.values(m).filter((e) => e.verified && e.evidence);
+            if (closed.length === 0) { console.error('no requirement closed with evidence'); process.exit(1); }
+            console.log('closed with evidence:', closed.length);
+          "

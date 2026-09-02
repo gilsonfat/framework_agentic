@@ -1,6 +1,6 @@
 {
   "run_id": "RUN-2026-09-02-7274",
-  "status": "COMPLETE",
+  "status": "STOPPED",
   "started_at": "2026-09-02T14:04:05.213Z",
   "finished_at": "2026-09-02T14:04:05.387Z",
   "baseline_commit": "96cd30b4dcd4ce4cf0d71b657eba4021a4306b6b",
@@ -696,5 +696,10 @@
     ],
     "blockers": [],
     "timestamp": "2026-09-02T14:04:05.387Z"
-  }
+  },
+  "schema_version": 2,
+  "blockers": [
+    "Retired by `agentic migrate`: this run was closed by the pre-evidence pipeline and has no evidence record.",
+    "Start a fresh cycle with `agentic prompt \"<instruction>\"`."
+  ]
 }

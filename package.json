@@ -1,7 +1,7 @@
 {
   "name": "@agentic/sdlc-orchestrator",
-  "version": "1.0.0",
-  "description": "Agentic SDLC Orchestrator - Cyclic, auditable, and state-driven autonomous software delivery framework",
+  "version": "1.1.0",
+  "description": "Agentic SDLC Orchestrator - deterministic, state-driven delivery framework with evidence-gated closure for AI coding agents",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -16,7 +16,10 @@
     "status": "node bin/agentic.js status",
     "observe": "node bin/agentic.js observe",
     "reconcile": "node bin/agentic.js reconcile",
-    "init:agentic": "node scripts/agentic-init.js"
+    "init:agentic": "node scripts/agentic-init.js",
+    "prepublishOnly": "npm run build && npm test",
+    "migrate": "node bin/agentic.js migrate",
+    "verify:self": "node bin/agentic.js doctor && node bin/agentic.js audit verify"
   },
   "keywords": [
     "agentic",
@@ -43,5 +46,24 @@
     "tsx": "^4.19.3",
     "typescript": "^5.7.3",
     "vitest": "^3.0.8"
-  }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gilsonfat/framework_agentic.git"
+  },
+  "bugs": {
+    "url": "https://github.com/gilsonfat/framework_agentic/issues"
+  },
+  "homepage": "https://github.com/gilsonfat/framework_agentic#readme",
+  "files": [
+    "dist",
+    "bin",
+    ".agentic/orchestrator",
+    ".agentic/prompts",
+    ".agentic/templates",
+    "README.md"
+  ]
 }

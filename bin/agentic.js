@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { createCli } from '../dist/cli/cli-runner.js';
+import { runCli } from '../dist/cli/cli-runner.js';
 
-const cli = createCli(process.cwd());
-await cli.parseAsync(process.argv);
+// The CLI reports its own failures as messages; this only sets the exit code.
+process.exitCode = await runCli(process.argv, process.cwd());

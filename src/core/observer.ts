@@ -5,6 +5,7 @@ import { ObservedState } from '../types/state.js';
 import { EvidenceRecord } from '../types/evidence.js';
 import { ConfigLoader } from './config-loader.js';
 import { EvidenceCollector } from './evidence-collector.js';
+import { stampVersion } from './artifact-schema.js';
 import { ModuleDetector } from './module-detector.js';
 
 export interface ObserveOptions {
@@ -280,10 +281,9 @@ export class Observer {
       fs.mkdirSync(historyDir, { recursive: true });
     }
 
-    const stateFile = path.join(stateDir, 'observed-state.json');
-    fs.writeFileSync(stateFile, JSON.stringify(state, null, 2), 'utf8');
+    const serialized = JSON.stringify(stampVersion(state), null, 2);
 
-    const historyFile = path.join(historyDir, `${state.run_id}-observed.json`);
-    fs.writeFileSync(historyFile, JSON.stringify(state, null, 2), 'utf8');
+    fs.writeFileSync(path.join(stateDir, 'observed-state.json'), serialized, 'utf8');
+    fs.writeFileSync(path.join(historyDir, `${state.run_id}-observed.json`), serialized, 'utf8');
   }
 }

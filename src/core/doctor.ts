@@ -10,6 +10,8 @@ import { TeamCoordinator } from './team.js';
 import { ProviderInstaller } from './provider-installer.js';
 import { SkillRegistry } from './skill-registry.js';
 import { AgentIntegrations } from './agent-integrations.js';
+import { ArtifactValidator } from './artifact-validator.js';
+import { Migrator } from './migrator.js';
 
 /**
  * Roles this package implements natively, so an absent external engine is a
@@ -63,6 +65,7 @@ export class Doctor {
       ...this.checkStateArtifacts(),
       ...this.checkEvidenceCapability(),
       ...this.checkIntegrity(),
+      ...this.checkArtifactSchemas(),
       ...this.checkProviders(),
       ...this.checkSkillPacks(),
       ...this.checkAgentIntegrations(),
@@ -240,6 +243,53 @@ export class Doctor {
         details: `gate configuration unavailable: ${error instanceof Error ? error.message : String(error)}`,
       });
     }
+
+    return checks;
+  }
+
+  /**
+   * The artifacts are the framework's memory. If they are from another schema
+   * version or do not match their own contract, every other check is reasoning
+   * over data it is misreading.
+   */
+  private checkArtifactSchemas(): DoctorCheckItem[] {
+    const checks: DoctorCheckItem[] = [];
+
+    const migration = new Migrator(this.projectRoot).inspect();
+    if (migration.fromFuture.length > 0) {
+      checks.push({
+        name: 'Artifact schema',
+        status: 'FAIL',
+        details: `written by a newer build: ${migration.fromFuture.join(', ')} - update the agentic CLI`,
+      });
+    } else if (migration.findings.length > 0) {
+      const critical = migration.findings.filter((f) => f.severity === 'critical');
+      checks.push({
+        name: 'Artifact schema',
+        status: critical.length > 0 ? 'FAIL' : 'WARN',
+        details: `${migration.findings.length} artifact(s) predate schema v${migration.currentVersion}${
+          critical.length > 0 ? ` (${critical.length} claim(s) with no evidence)` : ''
+        }: run \`agentic migrate --apply\``,
+      });
+    } else {
+      checks.push({
+        name: 'Artifact schema',
+        status: 'PASS',
+        details: `all artifacts on schema v${migration.currentVersion}`,
+      });
+    }
+
+    const failures = new ArtifactValidator(this.projectRoot, this.configLoader).failures();
+    checks.push({
+      name: 'Artifact validation',
+      status: failures.length === 0 ? 'PASS' : 'FAIL',
+      details:
+        failures.length === 0
+          ? 'artifacts match their JSON Schemas'
+          : failures
+              .map((f) => `${f.artifact}: ${f.errors.slice(0, 2).join('; ')}`)
+              .join(' | '),
+    });
 
     return checks;
   }

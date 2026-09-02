@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { ObservedState, DeclaredState, ReconciledState, ReconciledItem } from '../types/state.js';
 import { AuditLogger } from './audit-logger.js';
+import { stampVersion } from './artifact-schema.js';
 
 export class Reconciler {
   private projectRoot: string;
@@ -206,7 +207,7 @@ export class Reconciler {
 
     fs.writeFileSync(
       path.join(this.projectRoot, '.agentic', 'state', 'declared-state.json'),
-      JSON.stringify(next, null, 2),
+      JSON.stringify(stampVersion(next), null, 2),
       'utf8'
     );
 

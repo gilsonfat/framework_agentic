@@ -71,6 +71,8 @@ export interface SpecsObservedState {
 }
 
 export interface ObservedState {
+  /** Artifact schema version; absent means it predates versioning (v1). */
+  schema_version?: number;
   run_id: string;
   git: GitObservedState;
   project: ProjectObservedState;
@@ -84,6 +86,7 @@ export interface ObservedState {
 }
 
 export interface DeclaredState {
+  schema_version?: number;
   milestone: string;
   phase: string;
   requirements: Record<string, { status: string; title?: string }>;

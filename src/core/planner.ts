@@ -3,6 +3,7 @@ import path from 'path';
 import YAML from 'yaml';
 import { WorkPackage } from '../types/task.js';
 import { ConfigLoader } from './config-loader.js';
+import { stampVersion } from './artifact-schema.js';
 
 export class Planner {
   private projectRoot: string;
@@ -51,7 +52,7 @@ export class Planner {
     }
 
     const currentFile = path.join(planningDir, 'current-work-package.yaml');
-    const yamlContent = YAML.stringify(pkg);
+    const yamlContent = YAML.stringify(stampVersion(pkg));
     fs.writeFileSync(currentFile, yamlContent, 'utf8');
 
     const historyFile = path.join(historyDir, `${pkg.run_id}-work-package.yaml`);

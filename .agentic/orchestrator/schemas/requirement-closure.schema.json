@@ -4,28 +4,68 @@
   "type": "object",
   "additionalProperties": {
     "type": "object",
-    "required": ["implemented", "tested", "verified", "tasks"],
+    "required": [
+      "implemented",
+      "tested",
+      "verified",
+      "tasks"
+    ],
     "properties": {
-      "implemented": { "type": "boolean" },
-      "tested": { "type": "boolean" },
-      "verified": { "type": "boolean" },
+      "implemented": {
+        "type": "boolean"
+      },
+      "tested": {
+        "type": "boolean"
+      },
+      "verified": {
+        "type": "boolean"
+      },
       "tasks": {
         "type": "array",
-        "items": { "type": "string" }
+        "items": {
+          "type": "string"
+        }
       },
       "files": {
         "type": "array",
-        "items": { "type": "string" }
+        "items": {
+          "type": "string"
+        }
       },
       "tests": {
         "type": "array",
-        "items": { "type": "string" }
+        "items": {
+          "type": "string"
+        }
       },
       "commits": {
         "type": "array",
-        "items": { "type": "string" }
+        "items": {
+          "type": "string"
+        }
       },
-      "verification": { "type": "string" }
+      "verification": {
+        "type": "string"
+      },
+      "evidence": {
+        "type": "string",
+        "description": "Evidence record id that justified closure."
+      },
+      "verified_by": {
+        "type": "string"
+      },
+      "verified_at": {
+        "type": "string"
+      },
+      "closed_by_run": {
+        "type": "string"
+      },
+      "commit": {
+        "type": "string"
+      },
+      "note": {
+        "type": "string"
+      }
     }
   }
 }

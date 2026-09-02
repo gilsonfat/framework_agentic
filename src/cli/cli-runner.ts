@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { Command } from 'commander';
 import { Orchestrator } from '../core/orchestrator.js';
 import { Doctor } from '../core/doctor.js';
@@ -21,10 +22,61 @@ import { SkillRegistry } from '../core/skill-registry.js';
 import { AgentIntegrations, ALL_PRODUCT_IDS } from '../core/agent-integrations.js';
 import { SkillStage } from '../types/skills.js';
 import { AgentProductId } from '../types/integrations.js';
+import { Migrator } from '../core/migrator.js';
+import { ArtifactValidator } from '../core/artifact-validator.js';
+import { ARTIFACT_SCHEMA_VERSION } from '../core/artifact-schema.js';
+import { CliError, reportError, requireInitialized } from './errors.js';
 import { ExecutionMode } from '../types/execution.js';
 
 function resolveTarget(options: { target?: string }, projectRoot: string): string {
   return path.resolve(options.target || projectRoot);
+}
+
+/**
+ * Target directory for a command that cannot run on an uninitialized project.
+ * Keeping the guard next to the resolution means no command can forget it.
+ */
+function resolveInitialized(options: { target?: string }, projectRoot: string, command: string): string {
+  const targetDir = resolveTarget(options, projectRoot);
+  requireInitialized(targetDir, command);
+  return targetDir;
+}
+
+/**
+ * Wraps a gate decision so an unknown or already-decided gate reads as an
+ * operator mistake, not as a crash in the framework.
+ */
+function decideGate(keeper: GateKeeper, gateId: string, decision: 'APPROVED' | 'REJECTED', note?: string) {
+  try {
+    return keeper.decide(gateId, decision, note);
+  } catch (error) {
+    const pending = keeper.listPending();
+    throw new CliError(
+      error instanceof Error ? error.message : String(error),
+      pending.length > 0
+        ? `Pending gates: ${pending.map((g) => g.id).join(', ')}`
+        : 'There are no pending gates. List them with: agentic gate list'
+    );
+  }
+}
+
+/** The CLI version is read from package.json so the two can never drift. */
+function readVersion(): string {
+  try {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    for (const candidate of [
+      path.resolve(here, '..', '..', 'package.json'),
+      path.resolve(here, '..', '..', '..', 'package.json'),
+    ]) {
+      if (fs.existsSync(candidate)) {
+        const pkg = JSON.parse(fs.readFileSync(candidate, 'utf8')) as { name?: string; version?: string };
+        if (pkg.version && pkg.name?.includes('agentic')) return pkg.version;
+      }
+    }
+  } catch {
+    // fall through to the default below
+  }
+  return '0.0.0-dev';
 }
 
 function loadAnswers(file?: string): Record<string, string> | undefined {
@@ -69,7 +121,7 @@ export function createCli(projectRoot: string = process.cwd()): Command {
   program
     .name('agentic')
     .description('Agentic SDLC Orchestrator CLI - state-driven, evidence-gated software delivery')
-    .version('1.1.0');
+    .version(readVersion());
 
   // ---------------------------------------------------------------- setup ---
   const runSetup = async (options: Record<string, unknown>) => {
@@ -173,7 +225,7 @@ export function createCli(projectRoot: string = process.cwd()): Command {
     .option('--observe-tests', 'Run the test suite during OBSERVE to record a baseline', false)
     .option('-f, --force', 'Take over a phase lease held by a teammate', false)
     .action(async (instructionsArray: string[], options) => {
-      const targetDir = resolveTarget(options, projectRoot);
+      const targetDir = resolveInitialized(options, projectRoot, 'prompt');
       await new PromptOrchestrator(targetDir).dispatchPrompt(instructionsArray.join(' '), {
         domain: options.domain,
         complexity: options.complexity,
@@ -193,7 +245,7 @@ export function createCli(projectRoot: string = process.cwd()): Command {
     .option('-t, --target <path>', 'Target project directory', projectRoot)
     .option('-a, --answers <file>', 'JSON file with answers to probes, keyed by probe id')
     .action(async (instructionsArray: string[], options) => {
-      const targetDir = resolveTarget(options, projectRoot);
+      const targetDir = resolveInitialized(options, projectRoot, 'grill');
       const instruction = instructionsArray.join(' ');
       const { BmadEngine } = await import('../core/bmad-engine.js');
       const { GrillMeEngine } = await import('../core/grill-me-engine.js');
@@ -226,7 +278,7 @@ export function createCli(projectRoot: string = process.cwd()): Command {
     .description('Generate a Spec Kit formal contract for an instruction')
     .option('-t, --target <path>', 'Target project directory', projectRoot)
     .action(async (instructionsArray: string[], options) => {
-      const targetDir = resolveTarget(options, projectRoot);
+      const targetDir = resolveInitialized(options, projectRoot, 'spec');
       const instruction = instructionsArray.join(' ');
       const { BmadEngine } = await import('../core/bmad-engine.js');
       const { SpecEngine } = await import('../core/spec-engine.js');
@@ -256,7 +308,7 @@ export function createCli(projectRoot: string = process.cwd()): Command {
     .option('--observe-tests', 'Run the test suite during OBSERVE', false)
     .option('-f, --force', 'Take over a phase lease held by a teammate', false)
     .action(async (options) => {
-      const targetDir = resolveTarget(options, projectRoot);
+      const targetDir = resolveInitialized(options, projectRoot, 'run');
       console.log(`>>> Agentic SDLC cycle in: ${targetDir}`);
       const result = await new Orchestrator(targetDir).runCycle({
         phaseId: options.phase,
@@ -290,7 +342,7 @@ export function createCli(projectRoot: string = process.cwd()): Command {
     .option('--note <text>', 'Free-form note (reason for blocked/failed)')
     .option('-r, --run <runId>', 'Run id (defaults to the current run)')
     .action((taskId: string, options) => {
-      const targetDir = resolveTarget(options, projectRoot);
+      const targetDir = resolveInitialized(options, projectRoot, 'report');
       const runId = options.run || new Orchestrator(targetDir).loadCurrentRun()?.run_id;
       if (!runId) {
         console.error('No current run found. Start one with `agentic run` or pass --run <runId>.');
@@ -319,7 +371,7 @@ export function createCli(projectRoot: string = process.cwd()): Command {
     .option('-t, --target <path>', 'Target project directory', projectRoot)
     .option('--dry-run', 'Do not execute the suite (closure will be refused)', false)
     .action(async (options) => {
-      const targetDir = resolveTarget(options, projectRoot);
+      const targetDir = resolveInitialized(options, projectRoot, 'verify');
       const orchestrator = new Orchestrator(targetDir);
       const current = orchestrator.loadCurrentRun();
       if (!current) {
@@ -351,7 +403,7 @@ export function createCli(projectRoot: string = process.cwd()): Command {
     .option('-c, --command <cmd>', 'Override the detected test command')
     .option('--show', 'Show the last recorded evidence instead of collecting new evidence', false)
     .action((options) => {
-      const targetDir = resolveTarget(options, projectRoot);
+      const targetDir = resolveInitialized(options, projectRoot, 'evidence');
       const collector = new EvidenceCollector(targetDir);
 
       if (options.show) {
@@ -387,7 +439,7 @@ export function createCli(projectRoot: string = process.cwd()): Command {
     .description('List pending human gates')
     .option('-t, --target <path>', 'Target project directory', projectRoot)
     .action((options) => {
-      const pending = new GateKeeper(resolveTarget(options, projectRoot)).listPending();
+      const pending = new GateKeeper(resolveInitialized(options, projectRoot, 'gate list')).listPending();
       if (pending.length === 0) {
         console.log('No pending human gates.');
         return;
@@ -409,7 +461,8 @@ export function createCli(projectRoot: string = process.cwd()): Command {
     .option('-t, --target <path>', 'Target project directory', projectRoot)
     .option('--note <text>', 'Rationale recorded with the decision')
     .action((gateId: string, options) => {
-      const request = new GateKeeper(resolveTarget(options, projectRoot)).decide(gateId, 'APPROVED', options.note);
+      const keeper = new GateKeeper(resolveInitialized(options, projectRoot, 'gate approve'));
+      const request = decideGate(keeper, gateId, 'APPROVED', options.note);
       console.log(`+ ${request.id} APPROVED by ${request.decided_by}. Continue with: agentic run`);
     });
 
@@ -419,7 +472,8 @@ export function createCli(projectRoot: string = process.cwd()): Command {
     .option('-t, --target <path>', 'Target project directory', projectRoot)
     .option('--note <text>', 'Rationale recorded with the decision')
     .action((gateId: string, options) => {
-      const request = new GateKeeper(resolveTarget(options, projectRoot)).decide(gateId, 'REJECTED', options.note);
+      const keeper = new GateKeeper(resolveInitialized(options, projectRoot, 'gate reject'));
+      const request = decideGate(keeper, gateId, 'REJECTED', options.note);
       console.log(`+ ${request.id} REJECTED by ${request.decided_by}.`);
     });
 
@@ -522,6 +576,47 @@ export function createCli(projectRoot: string = process.cwd()): Command {
           `${event.time} #${event.seq ?? '-'} ${event.run} ${event.type}${event.from ? ` ${event.from}->${event.to}` : ''}${event.actor ? ` (${event.actor})` : ''}`
         );
       }
+    });
+
+  // --------------------------------------------------------------- migrate ---
+  program
+    .command('migrate')
+    .description('Bring .agentic artifacts up to the current schema version')
+    .option('-t, --target <path>', 'Target project directory', projectRoot)
+    .option('--apply', 'Actually rewrite the artifacts (default is a dry run)', false)
+    .action((options) => {
+      const targetDir = resolveInitialized(options, projectRoot, 'migrate');
+      const migrator = new Migrator(targetDir);
+      const report = options.apply ? migrator.apply() : migrator.inspect();
+
+      console.log(`\nArtifact schema: v${report.currentVersion} (this build)`);
+
+      if (report.fromFuture.length > 0) {
+        console.error(
+          `\nx These artifacts were written by a NEWER build and were left untouched:\n  ${report.fromFuture.join(
+            '\n  '
+          )}\n  Update the agentic CLI instead of migrating backwards.`
+        );
+        process.exitCode = 1;
+      }
+
+      if (report.findings.length === 0) {
+        console.log(report.fromFuture.length > 0 ? '' : 'Everything is already on the current schema.\n');
+        return;
+      }
+
+      for (const finding of report.findings) {
+        const mark = finding.severity === 'critical' ? 'x' : finding.severity === 'warning' ? '!' : '-';
+        console.log(`\n${mark} [${finding.id}] ${finding.artifact} (v${finding.from} -> v${finding.to})`);
+        console.log(`  ${finding.description}`);
+        console.log(`  ${options.apply ? 'applied:' : 'will do:'} ${finding.action}`);
+      }
+
+      console.log(
+        options.apply
+          ? `\n+ Migrated ${report.findings.length} artifact issue(s). Re-check with: agentic status\n`
+          : `\ni Dry run. Apply with: agentic migrate --apply\n`
+      );
     });
 
   // ---------------------------------------------------------------- agents ---
@@ -702,7 +797,13 @@ export function createCli(projectRoot: string = process.cwd()): Command {
     .description('Display the current SDLC status dashboard')
     .option('-t, --target <path>', 'Target project directory', projectRoot)
     .action((options) => {
-      console.log(new StatusDashboard(resolveTarget(options, projectRoot)).render());
+      const targetDir = resolveTarget(options, projectRoot);
+      if (!fs.existsSync(path.join(targetDir, '.agentic', 'orchestrator', 'workflow.yaml'))) {
+        console.log(`\nAgentic SDLC is not initialized in ${targetDir}.`);
+        console.log('Set it up with:  agentic init\n');
+        return;
+      }
+      console.log(new StatusDashboard(targetDir).render());
     });
 
   program
@@ -843,3 +944,41 @@ export function createCli(projectRoot: string = process.cwd()): Command {
 
   return program;
 }
+
+/**
+ * Entry point used by the `agentic` binary.
+ *
+ * Every failure funnels through here so the operator sees an actionable message
+ * instead of a Node stack trace, and so the process exit code is meaningful.
+ */
+export async function runCli(
+  argv: string[] = process.argv,
+  projectRoot: string = process.cwd()
+): Promise<number> {
+  const program = createCli(projectRoot);
+  program.exitOverride();
+
+  try {
+    await program.parseAsync(argv);
+    return typeof process.exitCode === 'number' ? process.exitCode : 0;
+  } catch (error) {
+    // Commander throws for --help and --version too; those are not failures.
+    const code = (error as { code?: string }).code;
+    if (code === 'commander.helpDisplayed' || code === 'commander.version' || code === 'commander.help') {
+      return 0;
+    }
+    if (code === 'commander.unknownCommand' || code === 'commander.unknownOption') {
+      // Commander already printed the message; only the way forward is missing.
+      console.error('  See the available commands with: agentic --help\n');
+      return 1;
+    }
+    if (code === 'commander.missingArgument' || code === 'commander.missingMandatoryOptionValue') {
+      console.error(`\nx ${(error as Error).message}\n`);
+      return 1;
+    }
+
+    return reportError(error);
+  }
+}
+
+export { CliError };
